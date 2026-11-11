@@ -343,6 +343,7 @@ def _shell(r: APIRouter) -> FastAPI:
     web_interview = os.path.join(web_root, "interview.html")
     web_index = os.path.join(web_root, "index.html")
     web_ai = os.path.join(web_root, "ai.html")
+    web_motion = os.path.join(web_root, "motion.js")
 
     @app.get("/resume", include_in_schema=False)
     @app.get("/targets", include_in_schema=False)
@@ -361,6 +362,10 @@ def _shell(r: APIRouter) -> FastAPI:
     @app.get("/interview", include_in_schema=False)
     def interview_page():
         return FileResponse(web_interview) if os.path.exists(web_interview) else JSONResponse({"message": "Interview page not found"})
+
+    @app.get("/motion.js", include_in_schema=False)
+    def motion_script():
+        return FileResponse(web_motion, media_type="text/javascript") if os.path.exists(web_motion) else JSONResponse({"message": "Motion script not found"}, status_code=404)
     # --- End interview feature ---
 
     return app
