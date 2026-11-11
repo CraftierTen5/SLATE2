@@ -33,9 +33,11 @@ def build_draft(parsed: dict, job: dict, profile: dict = None) -> dict:
         if e.get("gpa"):
             line += f", {e['gpa']['label']} {e['gpa']['value']}"
         resume.append(line + (f" ({e['year']})" if e["year"] else ""))
+    # Never assert content the parser did not extract (e.g. projects): the
+    # closing stays neutral about what the candidate can discuss.
     note = (f"Hello {job['company']} team, I am applying for the {job['title']} role. "
             + (f"My background includes {', '.join(matched)}. " if matched else "")
-            + "I would be glad to share more about my projects.")
+            + "I would be glad to discuss the role further.")
     return {"tailoredResume": "\n".join(resume), "coverNote": note, "claims": matched, "gaps": missing,
             "profileGaps": gaps}
 

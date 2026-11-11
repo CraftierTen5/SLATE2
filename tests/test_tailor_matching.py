@@ -124,3 +124,15 @@ class GpaPreservation(unittest.TestCase):
                               "She interned at MechDesign Labs as a CAD Intern.")
         d = build_draft(parsed, self.JOB)
         self.assertIn("Education: Studied Mechanical Engineering, NIT Trichy, CGPA 8.1 (2026)", d["tailoredResume"])
+
+
+class CoverNoteNeutrality(unittest.TestCase):
+    """The cover note never asserts content the parser did not extract."""
+
+    JOB = {"title": "Data Analyst", "company": "ExampleCo", "skills": ["Python"]}
+
+    def test_no_project_claim_when_source_has_no_projects(self):
+        parsed = parse_resume("Asha Verma\nEducation\nB.Tech Computer Science, IIITM Gwalior, 2027\nSkills: Python, Git, SQL\n")
+        d = build_draft(parsed, self.JOB)
+        self.assertNotIn("project", d["coverNote"].lower())
+        self.assertIn("I would be glad to discuss the role further.", d["coverNote"])
