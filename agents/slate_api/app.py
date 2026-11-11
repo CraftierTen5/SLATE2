@@ -72,6 +72,11 @@ def _mount(r: APIRouter, get_svc):
     def review_skills(request: Request, rid: str, b: SkillReviewIn):
         with get_svc(request) as svc: return svc.review_resume_skills(rid, b.skills, b.confirm)
 
+    @r.get("/jobs")
+    def jobs(request: Request, query: str = "", location: str = "", resumeId: Optional[str] = None):
+        with get_svc(request) as svc: return svc.jobs(query, location, resumeId)
+
+
 
 def _shell(r: APIRouter) -> FastAPI:
     app = FastAPI(title="Slate API (core adapter)")

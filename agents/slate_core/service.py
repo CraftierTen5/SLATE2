@@ -3,6 +3,7 @@
 Built up feature by feature: shared error type and store plumbing, plus the
 resume intake / skill review feature. Later slices add their own sections.
 """
+from . import jobs as J
 from .resume import parse_resume, ParseError
 
 class SlateError(Exception):
@@ -90,6 +91,11 @@ class SlateService:
         self._persist()
         # Draft invalidation on resume correction arrives with the drafts slice.
         return {"resumeId": rid, "parsed": parsed, "invalidatedDraftIds": []}
+
+
+    def jobs(self, query="", location="", resume_id=None) -> dict:
+        skills = self._resume(resume_id)["skills"] if resume_id else []
+        return {"jobs": J.search_jobs(query, location, skills)}
 
     def upload_resume(self, *a, **k):
         r = self._upload_resume(*a, **k)
