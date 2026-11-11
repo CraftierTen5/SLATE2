@@ -16,12 +16,53 @@ _QUALIFICATION_UNCERTAIN = re.compile(
 class ParseError(ValueError):
     pass
 
+
+def _join_tab_split_lines(text: str) -> str:
+    """Rejoin tabular-PDF word fragments into logical lines.
+
+    pdftotext on tabular templates emits one word per physical line:
+    'word\\t', newline, ' \\xa0word'. A fragment ends with a tab and the next
+    fragment starts with whitespace; lines made only of tabs/spaces/nbsp are
+    the real (visual) line breaks. Text without that signature is returned
+    unchanged, so ordinary resumes are untouched. Form feeds are page breaks
+    and soft hyphens are invisible; both are dropped inside artifact text.
+    """
+    if "\t\n" not in text and "\xa0" not in text:
+        return text
+    text = text.replace("\x0c", "\n").replace("\xad", "")
+    out, current, blanks, prev_ended_tab = [], None, 0, False
+    for raw in text.split("\n"):
+        content = raw.strip("\t \xa0")
+        if not content:
+            if current is not None:
+                out.append(current)
+                current = None
+            blanks += 1
+            prev_ended_tab = False
+            continue
+        # One artifact-blank line is a visual line break; two or more are a
+        # real paragraph gap.
+        if current is None and out and blanks >= 2:
+            out.append("")
+        blanks = 0
+        if current is not None and prev_ended_tab and raw[:1] in (" ", "\t", "\xa0"):
+            current += " " + content
+        else:
+            if current is not None:
+                out.append(current)
+            current = content
+        prev_ended_tab = raw.endswith("\t")
+    if current is not None:
+        out.append(current)
+    return "\n".join(out)
+
 def parse_resume(text: str) -> dict:
     """Pull name, skills, education and experience from plain resume text."""
     if not isinstance(text, str) or len(text.strip()) < 20:
         raise ParseError("Resume text is empty or too short to parse.")
     if len(text) > MAX_RESUME_CHARS:
         raise ParseError("Resume text is too long (200,000 characters max).")
+    text = _join_tab_split_lines(text)
     text = _without_template_tips(text)
     lines = [l.strip() for l in text.splitlines() if l.strip()]
     if not lines:
@@ -38,7 +79,7 @@ def parse_resume(text: str) -> dict:
                 # Templates often put dates and the institute on their own lines:
                 # degree / 2024 - 2026 / Institute · score. Join them, fail closed.
                 if not edu.get("institute"):
-                    end_year, ctx = None, None
+                    end_year, ctx, gpa_ctx = None, None, None
                     for off in range(1, 7):
                         if qi + off >= len(qlines):
                             break
@@ -47,6 +88,10 @@ def parse_resume(text: str) -> dict:
                             yrs = re.findall(r"(?:19|20)\d\d", nl)
                             if yrs:
                                 end_year = int(yrs[-1])
+                            # A standalone 'GPA: 3.5' line is date-classified;
+                            # keep its literal label and value for this entry.
+                            if gpa_ctx is None:
+                                gpa_ctx = _gpa_literal(nl)
                             continue
                         ctx = _institute_context(nl)
                         break
@@ -54,6 +99,8 @@ def parse_resume(text: str) -> dict:
                         edu["institute"] = ctx["institute"]
                         if "gpa" in ctx and "gpa" not in edu:
                             edu["gpa"] = ctx["gpa"]
+                    if gpa_ctx and "gpa" not in edu:
+                        edu["gpa"] = gpa_ctx
                     if end_year and not edu.get("year"):
                         edu["year"] = end_year
                 education.append(edu)
@@ -97,18 +144,22 @@ _SUBJECT = re.compile(
     r"mathematics|statistics|commerce|humanities|administration|education|law|medicine)s?$", re.I)
 
 
-def _education_entry(part):
-    """Degree, institute and year from one education line; institute only if literally present."""
-    part = _strip_md(part).strip().lstrip("-•* ")
-    m = _DEGREE.search(part)
-    # GPA/CGPA only when literally stated on the same education line, label and
-    # scale kept exactly as written; never computed, converted or invented.
-    gpa = None
+def _gpa_literal(part):
+    """GPA/CGPA only when literally stated, label and scale kept exactly as
+    written; never computed, converted or invented."""
     fwd = re.search(r"\b(cgpa|gpa)\b\s*[:=-]?\s*(\d+(?:\.\d+)?(?:\s*/\s*\d+(?:\.\d+)?)?)", part, re.I)
     rev = re.search(r"\b(\d+(?:\.\d+)?(?:\s*/\s*\d+(?:\.\d+)?)?)\s*(cgpa|gpa)\b", part, re.I)
     gm = (fwd.group(1), fwd.group(2)) if fwd else ((rev.group(2), rev.group(1)) if rev else None)
     if gm:
-        gpa = {"label": gm[0].upper(), "value": re.sub(r"\s+", "", gm[1])}
+        return {"label": gm[0].upper(), "value": re.sub(r"\s+", "", gm[1])}
+    return None
+
+
+def _education_entry(part):
+    """Degree, institute and year from one education line; institute only if literally present."""
+    part = _strip_md(part).strip().lstrip("-•* ")
+    m = _DEGREE.search(part)
+    gpa = _gpa_literal(part)
     if not m:
         # Prose education: "studied <subject> at <institute>, graduating <year>".
         # The subject is kept as written; it is what the source literally states.
@@ -386,6 +437,8 @@ def name_candidate(lines):
             continue
         if "@" in line or re.match(r"^(?:e-?mail|phone|mobile|tel|contact|https?://|www\.)\b", line, re.I) or re.fullmatch(r"[+()\d\s.-]{7,}", line):
             continue
+        if re.fullmatch(r"\d{1,3}", line):
+            continue  # page-number furniture from PDF extraction, never a name
         if label in sections:
             break
         if re.match(r"^(?:name|full name)\s*[:：]", line, re.I):
