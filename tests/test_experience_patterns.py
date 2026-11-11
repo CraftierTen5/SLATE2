@@ -89,3 +89,45 @@ def test_lone_word_context_is_not_an_org():
 def test_dot_focus_area_headline_is_not_a_job():
     # 'Role · focus area' headline: single dot segment without an org suffix fails closed.
     assert _experience_entry("Mechanical Design Engineer · Product Development & DFM") is None
+
+
+# Audit F13 pins (10-sample internet audit, 2026-11-11): flattened-PDF rows
+# keep the dates on the title line ('Software Engineer May 2023 - Present'),
+# which is neither a clean title line nor a structured entry, so production
+# uploads lost the whole work history. The trailing date range is stripped;
+# the remainder must be exactly a title and the org must come from an
+# adjacent org line, otherwise the line stays unmatched (fail closed).
+
+def test_title_with_inline_dates_gets_org_from_previous_line():
+    r = parse_resume(
+        "John Doe\nhello@example.com\n"
+        "WORK EXPERIENCE\nABC Company\nSoftware Engineer May 2023 - Present\n- Lead a team of five\n"
+        "DEF Organization\nSoftware Engineer Intern Summer 2022\n- Re-architected the editor\n"
+        "XYZ University\nResearch Assistant Summer 2021\n- Devised an algorithm\n"
+        "SKILLS\nPython, SQL"
+    )
+    assert r["experience"] == [
+        {"title": "Software Engineer", "org": "ABC Company", "months": None},
+        {"title": "Software Engineer Intern", "org": "DEF Organization", "months": None},
+        {"title": "Research Assistant", "org": "XYZ University", "months": None}]
+
+
+def test_inline_dates_without_adjacent_org_fail_closed():
+    r = parse_resume(
+        "Jo Example\nj@example.com\nSUMMARY\nSoftware Engineer May 2020 - Present\nSKILLS\nPython")
+    assert r["experience"] == []
+
+
+def test_project_name_with_season_year_is_not_a_job():
+    # 'OpenResume Spring 2023': what remains after the date strip is not a title.
+    r = parse_resume(
+        "Jo Example\nj@example.com\nPROJECT\nOpenResume Spring 2023\n- Created a resume builder\n"
+        "SKILLS\nPython")
+    assert r["experience"] == []
+
+
+def test_bullet_line_with_parenthesized_years_is_not_a_job():
+    r = parse_resume(
+        "Jo Example\nj@example.com\nEDUCATION\nState University\nB.E. 2024\n"
+        "- Teaching Assistant for Programming for the Web (2022 - 2023)\nSKILLS\nPython")
+    assert r["experience"] == []

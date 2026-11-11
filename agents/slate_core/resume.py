@@ -301,6 +301,12 @@ _MONTHDATE_LINE = re.compile(
     r"^(?:jan(?:uary)?|feb(?:ruary)?|mar(?:ch)?|apr(?:il)?|may|jun(?:e)?|jul(?:y)?|"
     r"aug(?:ust)?|sep(?:t|tember)?|oct(?:ober)?|nov(?:ember)?|dec(?:ember)?|"
     r"spring|summer|fall|autumn|winter)\b.*(?:19|20)\d\d", re.I)
+_MONTH_WORD = (r"(?:jan(?:uary)?|feb(?:ruary)?|mar(?:ch)?|apr(?:il)?|may|jun(?:e)?|jul(?:y)?|"
+               r"aug(?:ust)?|sep(?:t|tember)?|oct(?:ober)?|nov(?:ember)?|dec(?:ember)?|"
+               r"spring|summer|fall|autumn|winter)")
+_MONTHYEAR = _MONTH_WORD + r"\.?(?:\s+(?:19|20)\d\d)"
+_TRAILING_DATES = re.compile(
+    r"\s+" + _MONTHYEAR + r"(?:\s*[-\u2013\u2014]\s*(?:" + _MONTHYEAR + r"|present|ongoing))?\s*$", re.I)
 
 
 def _title_line_join(line, prev, nxt, name="", prev2=""):
@@ -310,7 +316,14 @@ def _title_line_join(line, prev, nxt, name="", prev2=""):
     a date range, the line before it may be the employer."""
     base = _strip_md(line)
     if not _TITLE_FULL.match(base):
-        return None
+        # Flattened PDF rows keep the dates on the title line ('Software
+        # Engineer May 2023 - Present'). Strip a trailing date range; the
+        # remainder must be exactly a title, otherwise fail closed.
+        stripped = _TRAILING_DATES.sub("", base)
+        if stripped != base and _TITLE_FULL.match(stripped):
+            base = stripped
+        else:
+            return None
     org = _org_context(nxt) or _org_context(prev)
     if not org and prev2:
         p = _strip_md(prev)
