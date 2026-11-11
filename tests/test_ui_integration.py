@@ -45,3 +45,22 @@ def test_every_workspace_part_has_a_distinct_route_and_nav():
     assert 'pageParts={resume:["s1"],targets:["targetWorkspace"],draft:["s3"],comparisons:["s2"],roadmap:["s4"]}' in HTML
     assert 'crypto.subtle.digest("SHA-256",bytes)' in HTML
     assert 'beforeunload' in HTML
+
+def test_live_feed_copy_discloses_mentions_geography_and_freshness():
+    assert '% mention overlap (extracted)' in HTML
+    assert 'Live job board listings' in HTML
+    assert 'not because every role is India-eligible - read each posting' in HTML
+    assert "that age is why it shows 'stale', not a removal" in HTML
+    assert "employer's posting unchanged since " in HTML
+
+def test_sample_feed_literals_remain_for_fixture_mode():
+    assert 'Sample job comparisons' in HTML
+    assert 'over 5 sample listings' in HTML
+    assert '% skill overlap' in HTML
+    assert 'Explore five sample listings' in HTML
+
+def test_route_header_has_live_mode_copy():
+    assert 'Explore / Live boards' in HTML
+    assert 'Explore / Sample data' in HTML
+    assert 'Live listings from public job boards. Mention overlap is a literal text check, not an employability score.' in HTML
+    assert 'jobSource==="live"' in HTML

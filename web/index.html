@@ -287,10 +287,10 @@ html[data-theme=dark] #loginbox,html[data-theme=dark] #authPanel{background:rgba
 <div id="roleackt" hidden><p class="note" id="roleacktmsg"></p><label><input type="checkbox" id="roleacktbox"> I understand this target differs from what my resume shows, and I want a factual draft anyway.</label><div><button id="roleacktgo" class="sec">Create draft with original facts</button></div></div>
 <p class="note">This mode keeps the original resume text, including school, work and trade details the parser may miss. It does not rewrite, format a full CV, infer a qualification, or add job requirements as applicant facts. Review skills on the Resume page. Original-source changes require a new parsed resume version; only notes after the preserved block and the cover note can be edited here.</p></section>
 
-<section id="s2" class="off" data-route="comparisons"><h2>Sample job comparisons</h2>
-<p class="note">Demo score = share of a listing's skills found on the resume, over 5 sample listings. The 75% threshold from the deck is not implemented, so nothing here is claimed as a good match.</p>
+<section id="s2" class="off" data-route="comparisons"><h2 id="jobstitle">Sample job comparisons</h2>
+<p class="note" id="jobssub">Demo score = share of a listing's skills found on the resume, over 5 sample listings. The 75% threshold from the deck is not implemented, so nothing here is claimed as a good match.</p>
 <p id="coverage" class="note">Only five analyst/tech fixtures are available. Retail and customer-service roles are not covered. Ranking these fixtures does not choose your career target; the percentages are not resume-quality or employability scores.</p>
-<div class="toolrow" id="jobsources"><button id="srcsample" class="sec">Sample fixtures</button><button id="srclive" class="sec">Live public boards</button></div>
+<div class="toolrow" id="jobsources"><button id="srcsample" class="sec">Sample fixtures</button><button id="srclive" class="sec">Live public boards</button><input id="liveplace" maxlength="120" placeholder="Filter by place, e.g. Bangalore or Remote" hidden><button id="livefilter" class="sec" hidden>Filter</button></div>
 <p id="feedstatus" class="note"></p>
 <div id="jobs"></div>
 <div id="roleack" hidden><p class="note" id="roleackmsg"></p><label><input type="checkbox" id="roleackbox"> I understand this target differs from what my resume shows, and I want a factual draft anyway.</label><div><button id="roleackgo" class="sec">Create draft with original facts</button></div></div></section>
@@ -499,23 +499,44 @@ function showParsed(p,label){
 let jobSource="sample";
 $("srcsample").onclick=()=>{jobSource="sample";loadJobs().catch(e=>say("feedstatus",e.message,1))};
 $("srclive").onclick=()=>{jobSource="live";loadJobs().catch(e=>say("feedstatus",e.message,1))};
+$("livefilter").onclick=()=>{loadJobs().catch(e=>say("feedstatus",e.message,1))};
+const JOBS_COPY={sample:{title:"Sample comparisons",sub:"Explore five sample listings. Skill overlap is a demo calculation, not an employability score.",kicker:"Explore / Sample data",nav:"Sample comparisons"},live:{title:"Live job board listings",sub:"Live listings from public job boards. Mention overlap is a literal text check, not an employability score.",kicker:"Explore / Live boards",nav:"Live listings"}};
+function setJobsModeCopy(live){
+  const copy=JOBS_COPY[live?"live":"sample"];
+  const navLink=document.querySelector('a[data-route="comparisons"]');if(navLink)navLink.textContent=copy.nav;
+  if(activePart!=="comparisons")return;
+  const h=document.querySelector(".pagehead h1");if(h)h.textContent=copy.title;document.title=copy.title+" | Slate";
+  $("visual-pageSub").textContent=copy.sub;$("visual-kicker").textContent=copy.kicker;
+}
 async function loadJobs(){
   const requested=rid, generation=sourceGeneration, source=jobSource;
   let j;
-  try{j=await api("GET","/jobs?resumeId="+encodeURIComponent(requested)+(source==="live"?"&source=live":""))}
+  const place=source==="live"?$("liveplace").value.trim():"";
+  try{j=await api("GET","/jobs?resumeId="+encodeURIComponent(requested)+(source==="live"?"&source=live":"")+(place?"&location="+encodeURIComponent(place):""))}
   catch(e){if(source!=="live")throw e;$("feedstatus").textContent="Live feed request failed: "+e.message+". No listings shown; sample fixtures are never mixed in as live.";$("jobs").innerHTML="";return}
   if(generation!==sourceGeneration||requested!==rid)return;
   if(source!==jobSource)return;
   if(source==="live"){
     const st=j.feedStatus||{boards:[]},loaded=st.boards.filter(b=>b.count>0);
-    $("feedstatus").textContent="Live listings from public Lever/Greenhouse boards ("+(loaded.map(b=>b.company+" "+b.count).join(", ")||"none loaded")+"). Each board refetches at most hourly; apply links open the original employer posting. Skills are mentions extracted from the text, not the employer's structured list."+(st.anyStale?" Some boards are stale after a failed refresh: "+st.boards.filter(b=>b.error).map(b=>b.company).join(", ")+".":"")+(st.boards.every(b=>!b.count&&b.error)?" No board loaded; errors: "+st.boards.map(b=>b.company).join(", ")+".":"");
-    $("coverage").hidden=true;
-  }else{$("feedstatus").textContent="";$("coverage").hidden=false}
+    $("feedstatus").textContent="Live listings from public Lever/Greenhouse boards ("+(loaded.map(b=>b.company+" "+b.count).join(", ")||"none loaded")+"). Each board refetches at most hourly; apply links open the original employer posting. Skills are mentions extracted from the text, not the employer's structured list. Locations and eligibility vary by listing: a board was seeded for India/remote-friendly inventory when verified, not because every role is India-eligible - read each posting."+(st.anyStale?" Some boards are stale after a failed refresh: "+st.boards.filter(b=>b.error).map(b=>b.company).join(", ")+".":"")+(st.boards.every(b=>!b.count&&b.error)?" No board loaded; errors: "+st.boards.map(b=>b.company).join(", ")+".":"");
+    $("jobstitle").textContent="Live job board listings";$("jobssub").hidden=true;$("coverage").hidden=true;
+    $("liveplace").hidden=false;$("livefilter").hidden=false;
+    setJobsModeCopy(true)
+  }else{$("feedstatus").textContent="";$("coverage").hidden=false;
+    $("jobstitle").textContent="Sample job comparisons";$("jobssub").hidden=false;
+    $("liveplace").hidden=true;$("livefilter").hidden=true;
+    setJobsModeCopy(false)}
   $("jobs").innerHTML=j.jobs.map(x=>{
+    const seen=x.fetchedAt?"seen "+esc(x.fetchedAt.slice(0,16).replace("T"," "))+" UTC":"seen-time unknown";
+    const empUpdated=x.updatedAt?esc(x.updatedAt.slice(0,10)):"unknown";
+    const fresh=source!=="live"?"":(x.freshness==="stale"
+      ?seen+" - still listed; employer's posting unchanged since "+empUpdated+", and that age is why it shows 'stale', not a removal"
+      :seen+" · "+esc(x.freshness||"unknown"));
     const meta=source==="live"
-      ?esc(x.company)+" · "+esc(x.location)+" · no stated deadline · "+esc(x.freshness||"unknown")+" · "+esc(x.source==="lever"?"Lever":"Greenhouse")+" board"+(x.url?` · <a href="${esc(x.url)}" target="_blank" rel="noopener">Original posting</a>`:"")
+      ?esc(x.company)+" · "+esc(x.location)+" · no stated deadline · "+fresh+" · "+esc(x.source==="lever"?"Lever":"Greenhouse")+" board"+(x.url?` · <a href="${esc(x.url)}" target="_blank" rel="noopener">Original posting</a>`:"")
       :`${esc(x.company)} · ${esc(x.location)} · apply by ${esc(x.deadline)} · Demo fixture: ${esc(x.freshness||"unknown")} (not live-verified)`;
-    return `<div class="job"><div><b>${esc(x.title)}</b><br><small>${meta}</small><br><small>${esc(x.reason||"")}</small></div><div><span class="score">${Math.round(x.matchScore*100)}% skill overlap</span> <button data-j="${esc(x.jobId)}">Tailor</button></div></div>`}).join("");
+    const score=source==="live"?`${Math.round(x.matchScore*100)}% mention overlap (extracted)`:`${Math.round(x.matchScore*100)}% skill overlap`;
+    return `<div class="job"><div><b>${esc(x.title)}</b><br><small>${meta}</small><br><small>${esc(x.reason||"")}</small></div><div><span class="score">${score}</span> <button data-j="${esc(x.jobId)}">Tailor</button></div></div>`}).join("");
   document.querySelectorAll("[data-j]").forEach(b=>b.onclick=()=>tailor(b.dataset.j));
   on("s2");on("s4");on("s5");
 }
@@ -622,10 +643,11 @@ function routePage(part,replace=false){
  for(const [name,ids] of Object.entries(pageParts))for(const id of ids)$(id).hidden=name!==part;
  $("s5").hidden=true;
  document.querySelectorAll('a[data-part]').forEach(a=>{a.classList.toggle("active",a.dataset.part===part);a.setAttribute("aria-current",a.dataset.part===part?"page":"false")});
- const title={resume:"Your resume",targets:"Choose your target",draft:"Review your draft",comparisons:"Sample comparisons",roadmap:"Learning roadmap"}[part];
+ const liveJobs=part==="comparisons"&&typeof jobSource!=="undefined"&&jobSource==="live";
+ const title=liveJobs?JOBS_COPY.live.title:{resume:"Your resume",targets:"Choose your target",draft:"Review your draft",comparisons:JOBS_COPY.sample.title,roadmap:"Learning roadmap"}[part];
  const h=document.querySelector(".pagehead h1");if(h)h.textContent=title;document.title=title+" | Slate";
  const descriptions={resume:"Your story starts here. Keep the original, then review what Slate recognized.",targets:"Bring the opportunity you chose. Save its requirements without turning them into claims about you.",draft:"One saved version. Your review, your approval, and a download that matches it.",comparisons:"Explore five sample listings. Skill overlap is a demo calculation, not an employability score.",roadmap:"A small plan for practice. This is the fixed Data Analyst demo, not a career recommendation."};
- $("visual-pageSub").textContent=descriptions[part];$("visual-kicker").textContent=({resume:"01 / Your source",targets:"02 / Your direction",draft:"03 / Review & download",comparisons:"Explore / Sample data",roadmap:"Practice / Learning plan"})[part];
+ $("visual-pageSub").textContent=liveJobs?JOBS_COPY.live.sub:descriptions[part];$("visual-kicker").textContent=liveJobs?JOBS_COPY.live.kicker:({resume:"01 / Your source",targets:"02 / Your direction",draft:"03 / Review & download",comparisons:JOBS_COPY.sample.kicker,roadmap:"Practice / Learning plan"})[part];
  updateContextBar();
  if(part==="draft")$("s3").classList.remove("off");
  if(part==="comparisons"&&rid)$("s2").classList.remove("off");

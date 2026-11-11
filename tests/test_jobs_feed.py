@@ -152,6 +152,16 @@ class Service(unittest.TestCase):
         self.assertEqual([j["jobId"] for j in r["jobs"]], ["lever-meesho-abc123"])
         self.assertEqual(r["jobs"][0]["matchedSkills"], ["python"])
 
+    def test_live_reason_describes_extracted_mentions_not_required_skills(self):
+        s = self._svc({board_url(b): (LEVER if b["source"] == "lever" else GH) for b in TEST_BOARDS}, [])
+        rid = s.upload_resume(SDE_RESUME)["resumeId"]
+        r = s.jobs(resume_id=rid, source="live")
+        self.assertTrue(r["jobs"])
+        for j in r["jobs"]:
+            self.assertIn("mentions", j["reason"])
+            self.assertIn("not the employer's required-skill list", j["reason"])
+            self.assertNotIn("required skill", j["reason"].replace("required-skill", ""))
+
     def test_invalid_source_rejected(self):
         s = self._svc({}, [])
         with self.assertRaises(SlateError) as ctx:

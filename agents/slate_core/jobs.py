@@ -50,6 +50,20 @@ def match_reason(matched, missing) -> str:
         reason += f" Missing: {', '.join(missing)}."
     return reason
 
+def mention_reason(matched, missing) -> str:
+    """Reason line for live-board listings: their skills are literal mentions
+    extracted from posting text, never the employer's required-skill list,
+    so the wording must not say 'required' or imply a fit assessment."""
+    total = len(matched) + len(missing)
+    if total == 0:
+        return ("No known skills were extracted from this posting's text, "
+                "so there is nothing to compare.")
+    noun = "skill" if total == 1 else "skills"
+    base = (f"Resume mentions {len(matched)} of {total} {noun} literally named "
+            f"in the posting text")
+    base += f": {', '.join(matched)}." if matched else "."
+    return base + " Extracted text mentions, not the employer's required-skill list."
+
 def _as_listing(j) -> dict:
     """The curation shape for a stored listing. Identity is (source, sourceId);
     a listing that already carries its own source fields keeps them."""
@@ -84,15 +98,18 @@ def search_jobs(query: str = "", location: str = "", resume_skills=None, now=Non
         if loc and loc not in location_candidates(j["location"]):
             continue
         matched, missing = skill_breakdown(resume_skills, j["skills"])
+        reason = match_reason(matched, missing)
+        if j.get("skillsKind"):  # live listings: extracted mentions, never "required"
+            reason = mention_reason(matched, missing)
         item = {"jobId": j["jobId"], "title": j["title"], "company": j["company"],
                 "location": j["location"], "matchScore": match_score(resume_skills or [], j["skills"]),
                 "matchedSkills": matched, "missingSkills": missing,
-                "reason": match_reason(matched, missing),
+                "reason": reason,
                 "freshness": freshness(j, now),
                 "deadline": j.get("deadline"), "url": j["url"]}
         # Live-board listings carry their provenance through to the response;
         # fixtures have no source fields and stay labeled by the caller.
-        for k in ("source", "sourceId", "companyBoard", "skillsKind", "fetchedAt"):
+        for k in ("source", "sourceId", "companyBoard", "skillsKind", "fetchedAt", "updatedAt"):
             if j.get(k) is not None:
                 item[k] = j[k]
         out.append(item)
