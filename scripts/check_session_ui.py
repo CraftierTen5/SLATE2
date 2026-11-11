@@ -134,6 +134,7 @@ with tempfile.TemporaryDirectory() as tmp:
             page.locator('#resume').fill('Alex Example\nSkills: Python, communication')
             page.locator('#parse').click()
             page.wait_for_function('document.querySelector("#parsed").textContent.includes("Alex Example")')
+            page.locator('#aiack').click()
             page.locator('#pdffile').set_input_files({'name':'synthetic.pdf','mimeType':'application/pdf','buffer':make_pdf(['Blake Example','Skills: SQL, communication'])})
             page.wait_for_function('document.querySelector("#parsed").textContent.includes("Blake Example")')
             assert 'Blake Example' in page.locator('#resume').input_value()

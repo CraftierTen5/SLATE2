@@ -71,7 +71,7 @@ button:disabled{opacity:.35;cursor:not-allowed}
 .msg{margin-top:8px;font-size:14px;overflow-wrap:anywhere}
 .upl{font-size:13px;color:var(--mut)}
 .pdfstatus{margin:10px 0;padding:10px 12px;border:1px solid var(--line);border-radius:10px;background:var(--soft);font-size:13px;color:var(--mut);line-height:1.5;overflow-wrap:anywhere}
-.aiconsent{display:flex;gap:8px;align-items:flex-start}
+.aiconsent{display:flex;gap:12px;align-items:center;flex-wrap:wrap}#aiack{white-space:nowrap;flex:none}
 .pdfstatus[hidden]{display:none}
 .pdfstatus .pl .rest{visibility:hidden}
 .pdfstatus .pl.typing>span:first-child::after{content:"";display:inline-block;width:2px;height:1.05em;margin-left:1px;vertical-align:text-bottom;background:currentColor}
@@ -258,7 +258,7 @@ html[data-theme=dark] #loginbox,html[data-theme=dark] #authPanel{background:rgba
 <p class="note">Saved versions belong to this signed-in user. Reopening keeps original source and your review separate; it does not reparse or approve a draft.</p>
 <div id="savedmsg" class="msg"></div></details>
 <div class="source-composer"><label for="resume" class="composer-label">Bring your experience.</label><p class="composer-hint">Paste your resume or attach a PDF. Start with the original, not a polished claim.</p><textarea id="resume" placeholder="Paste your resume here. Education, experience, projects, and skills..."></textarea>
-<div class="toolrow intakerow composer-actions"><span class="upl uplbox">Attach PDF <input type="file" id="pdffile" aria-label="Attach resume PDF" accept="application/pdf,.pdf"></span><button id="parse">Parse resume text <span aria-hidden="true">↗</span></button></div><label class="note aiconsent"><input type="checkbox" id="aiconsent" onchange="if(!this.checked)abortExplain()"> Let an AI model (Groq) explain my resume after upload. This sends the extracted resume text to Groq. Off by default and cleared when you sign out or switch account.</label></div>
+<div class="toolrow intakerow composer-actions"><span class="upl uplbox">Attach PDF <input type="file" id="pdffile" aria-label="Attach resume PDF" disabled accept="application/pdf,.pdf"></span><button id="parse">Parse resume text <span aria-hidden="true">↗</span></button></div><div class="note aiconsent" id="aidisclose" role="note"><span id="aidisclosetext"><strong>Before you upload:</strong> Slate sends the text extracted from your PDF to Groq, an outside AI provider, to write a short explanation of your resume. Do not upload a PDF you do not want sent there. It can be wrong and changes nothing in your resume. You can paste your text instead, which is not sent to the model.</span> <button type="button" id="aiack">I understand, enable PDF upload</button> <span id="aistatus" hidden><strong>Acknowledged for this page session.</strong> PDFs you upload now have their extracted text sent to Groq, as described above. This resets when you sign out, switch account, re-authenticate after a session expiry, or reload.</span></div></div>
 <div class="response-surface"><div class="response-heading"><span aria-hidden="true">✦</span><h2>Source review</h2><span class="mode-label">Phrase extraction</span></div><p id="source-empty" class="empty-hint">Your source review appears here after parsing. Check what was recognized before you make a draft.</p>
 <div id="pdfstatus" class="pdfstatus" role="status" aria-live="polite" hidden></div>
 <div id="parsed" class="msg" aria-live="polite"></div>
@@ -421,7 +421,7 @@ const on=id=>$(id).classList.remove("off");
 function say(id,t,bad){$(id).className="msg "+(bad?"bad":"ok");$(id).textContent=t;if(!restoring)rememberSelection()}
 let sourceGeneration=0, sourceRequest=0, draftGeneration=0;
 function resetAccountState(){
-  abortExplain();$("aiconsent").checked=false;$("pdfstatus").hidden=true;$("pdfstatus").textContent="";selectionKey=null;restoring=false;sourceDirty=false;
+  abortExplain();aiAckToken=null;$("pdffile").disabled=true;$("pdffile").value="";$("aiack").hidden=false;$("aistatus").hidden=true;$("pdfstatus").hidden=true;$("pdfstatus").textContent="";selectionKey=null;restoring=false;sourceDirty=false;
   sourceRequest++;resetSourceResults();rid=null;targetEpoch++;tid=null;targetParent=null;targetDirty=false;
   ["targettitle","targetorg","targeturl","targettext","targetmsg"].forEach(id=>$(id).value!==undefined?$(id).value="":$(id).textContent="");
   $("savedtargets").innerHTML='<option value="">Choose a saved target</option>';
@@ -587,6 +587,8 @@ $("parse").onclick=async()=>{
   const r=await api("POST","/resume",{text:$("resume").value});if(request!==sourceRequest)return; resetSourceResults();rid=r.resumeId;
   showParsed(r.parsed); await loadSavedVersions();await loadJobs();
 }catch(e){if(e instanceof StaleResponse)return;say("parsed",e.message,1)}finally{if(request===sourceRequest){$("parse").textContent="Parse resume text ↗";$("parse").removeAttribute("aria-busy")}}};
+let aiAckToken=null;$("aiack").onclick=()=>{aiAckToken=token()||"anon";$("pdffile").disabled=false;$("aiack").hidden=true;$("aistatus").hidden=false};
+const aiAcked=()=>aiAckToken!==null&&aiAckToken===(token()||"anon");
 let explainAbort=null;const EXPLAIN_WAIT_MS=8000;
 function abortExplain(){if(explainAbort){explainAbort.abort();explainAbort=null}}
 let activeProg=null;
@@ -616,7 +618,7 @@ function pdfProgress(){
 }
 function kb(n){return n<1024?n+" B":(n/1024).toFixed(n<10240?1:0)+" KB"}
 async function runExplain(j,request,auth,prog){
-  if(!$("aiconsent").checked){prog.line("AI explanation is off. Tick the box above to have a model explain the result.");return}
+  if(!aiAcked()){prog.line("AI explanation skipped: the Groq notice was not acknowledged for this account. Nothing was sent.");return}
   const myAbort=new AbortController();explainAbort=myAbort;let timedOut=false;const timer=setTimeout(()=>{timedOut=true;myAbort.abort()},EXPLAIN_WAIT_MS);
   prog.line("Parser results are shown below. Asking the AI model (Groq) for a short summary of this text. Unverified: it can be wrong and changes nothing in your resume.");
   const live=()=>request===sourceRequest&&auth===token();
@@ -625,7 +627,7 @@ async function runExplain(j,request,auth,prog){
     const r=await fetch("/v1/resume/"+encodeURIComponent(j.resumeId)+"/explain",{method:"POST",headers:h,body:JSON.stringify({consent:true}),signal:myAbort.signal});
     const ex=await r.json();
     if(!live())return;
-    if(!$("aiconsent").checked)throw Object.assign(new Error("cancelled"),{name:"AbortError"});
+    if(!aiAcked())throw Object.assign(new Error("cancelled"),{name:"AbortError"});
     if(!r.ok){const e=new Error(ex.error?ex.error.message:"Request failed");e.code=ex.error&&ex.error.code;throw e}
     if(ex.truncated)prog.line("Only the first "+ex.charsSent+" of "+ex.charsTotal+" characters were sent to the model.");
     ex.items.forEach(it=>prog.line("AI (unverified): "+it.text+(it.sources.length?' (from your resume: '+it.sources.map(x=>'"'+x.line.slice(0,90)+(x.line.length>90?'...':'')+'"').join("; ")+')':"")));
@@ -635,7 +637,7 @@ async function runExplain(j,request,auth,prog){
     prog.line("AI explanation not available ("+why+"). Parser results above are unaffected.","err")
   }finally{clearTimeout(timer);if(explainAbort===myAbort)explainAbort=null}
 }
-$("pdffile").onchange=async()=>{const f=$("pdffile").files[0];if(!f)return;
+$("pdffile").onchange=async()=>{const f=$("pdffile").files[0];if(!f)return;if(!aiAcked()){$("pdffile").value="";return}
   abortExplain();const request=++sourceRequest,auth=token(),generation=sourceGeneration,requestEpoch=sourceRequest;
   const prog=pdfProgress();prog.line("Sending "+f.name+" ("+kb(f.size)+") to Slate.");prog.line("Reading the PDF text and checking it for skills with fixed rules.");
   try{

@@ -77,6 +77,21 @@ uvicorn slate_api.app:app --app-dir agents --reload
 Open `http://127.0.0.1:8000/interview` to go straight to the interview, or
 `http://127.0.0.1:8000` for the full Slate page. Keep the terminal running.
 
+## Groq PDF explanation (default flow)
+
+After a PDF upload, Slate shows the parser results at once and then asks Groq
+for a short, unverified explanation of the extracted text. This runs by default,
+but only after the user acknowledges the notice above the upload control: the
+extracted resume text is sent to Groq, an outside provider. The upload control
+stays disabled until then, and the acknowledgment is kept in the page only, so
+it resets on sign-out, account switch and reload. Pasted text is never sent to
+the model. The API still requires an explicit `consent: true` per request.
+
+Setup on the machine that runs the server: put the key in the repository-root
+`.env` as `LLM_API_KEY=...` (model defaults to `openai/gpt-oss-120b`). Never
+commit it. Without a key the explanation line says no model is set up and
+parser results are unchanged.
+
 ## Separate workspace pages
 
 The local web app now has `/resume`, `/targets`, `/draft`, `/comparisons`,
