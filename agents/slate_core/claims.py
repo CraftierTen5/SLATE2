@@ -19,10 +19,20 @@ def _norm(s: str) -> str:
 def total_months(parsed: dict) -> int:
     return sum(e.get("months") or 0 for e in parsed.get("experience", []))
 
-def validate(parsed: dict, resume_text: str, *texts: str) -> list:
-    """Return a list of human-readable violations; empty list means no rule-detectable problem."""
+def validate(parsed: dict, resume_text: str, *texts: str, allowed_mentions=()) -> list:
+    """Return a list of human-readable violations; empty list means no rule-detectable problem.
+
+    allowed_mentions: exact strings the generator legitimately quotes without
+    claiming them - the target's own title and company ("applying for the
+    Machine Learning Engineer role"). Only those exact occurrences are
+    excluded, so a personal assertion using the same words any other way
+    ("two years of machine learning experience") is still caught.
+    """
     problems = []
     body = "\n".join(t for t in texts if t)
+    for mention in allowed_mentions:
+        if isinstance(mention, str) and mention.strip():
+            body = re.sub(r"(?<!\w)" + re.escape(mention.strip()) + r"(?!\w)", " ", body, flags=re.I)
     low, src = _norm(body), _norm(resume_text)
     for s in find_skills(body):
         if s not in parsed["skills"]:

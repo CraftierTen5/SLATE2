@@ -4,6 +4,7 @@ Built up feature by feature: shared error type and store plumbing, plus the
 resume intake / skill review feature. Later slices add their own sections.
 """
 import os  # interview feature: GEMINI_API_KEY check for the coach hook
+import re
 from . import jobs as J
 from .resume import parse_resume, ParseError
 from .tailor import build_draft
@@ -92,7 +93,21 @@ class SlateService:
             raise SlateError("resume_not_found", "No resume with that id.")
         return r
 
-    def _violations(self, resume_id, content) -> list:
+    def _target_mentions(self, job_id, content=None) -> list:
+        """Exact strings a draft may quote as target references, not claims.
+        Resolved from the stored job id first; if the listing has expired from
+        the feed cache, from the draft's own stored 'Target role:' line.
+        Derived only from stored state, never from incoming edits."""
+        job = None
+        if job_id:
+            job = J.get_job(job_id) or self._feed.lookup(job_id)
+        if job:
+            return [job.get("title", ""), job.get("company", "")]
+        text = (content or {}).get("tailoredResume", "")
+        m = re.search(r"^Target role: (.+) at (.+)$", text, re.M)
+        return [m.group(1), m.group(2)] if m else []
+
+    def _violations(self, resume_id, content, allowed_mentions=()) -> list:
         if content.get("outputMode") == "source_preserving_draft_not_rewrite":
             import hashlib
             from .targets import source_preserving_content
@@ -112,15 +127,16 @@ class SlateService:
                 return ["The preserved original source block cannot be changed in this mode. Edit and parse the original resume to create a new source version."]
             # Only the byte-exact original/source-labelled builder block is
             # excluded. Appended notes and the cover note keep normal gates.
-            return validate(self._resume(resume_id), self._texts[resume_id], body[len(baseline):], content.get("coverNote", ""))
+            return validate(self._resume(resume_id), self._texts[resume_id], body[len(baseline):], content.get("coverNote", ""), allowed_mentions=allowed_mentions)
         return validate(self._resume(resume_id), self._texts[resume_id],
-                        content.get("tailoredResume", ""), content.get("coverNote", ""))
+                        content.get("tailoredResume", ""), content.get("coverNote", ""), allowed_mentions=allowed_mentions)
 
     def _check_draft(self, draft_id):
         d = self.approvals.get(draft_id)
         if d is None:
             raise SlateError("draft_not_found", "No draft with that id.")
-        bad = self._violations(d["resumeId"], d["content"])
+        bad = self._violations(d["resumeId"], d["content"],
+                               allowed_mentions=self._target_mentions(d.get("jobId"), d["content"]))
         if bad:
             raise SlateError("unsupported_claim", "Draft makes claims the resume does not support: " + "; ".join(bad))
         return d
@@ -330,7 +346,7 @@ class SlateService:
         if guard["kind"] == MISMATCH and not acknowledge_role_change:
             raise SlateError("role_change_needs_acknowledgment", guard["note"])
         d = build_draft(parsed, job, self._profile)
-        bad = self._violations(resume_id, d)
+        bad = self._violations(resume_id, d, allowed_mentions=[job["title"], job["company"]])
         if bad:  # generated drafts must pass the same check as edited ones
             raise SlateError("unsupported_claim", "Generated draft failed claim check: " + "; ".join(bad))
         content = {"tailoredResume": d["tailoredResume"], "coverNote": d["coverNote"]}
@@ -385,7 +401,8 @@ class SlateService:
         old = self.approvals.get(draft_id)
         if old is None:
             raise SlateError("draft_not_found", "No draft with that id.")
-        bad = self._violations(old["resumeId"], {**old["content"], **updates})
+        bad = self._violations(old["resumeId"], {**old["content"], **updates},
+                               allowed_mentions=self._target_mentions(old.get("jobId"), old["content"]))
         if bad:  # fail closed: no new draft is created
             raise SlateError("unsupported_claim", "Edit rejected, claims the resume does not support: " + "; ".join(bad))
         try:

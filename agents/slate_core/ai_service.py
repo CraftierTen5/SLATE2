@@ -58,7 +58,8 @@ class AISlateService(SlateService):
         low = text.lower()
         claims = [s for s in job["skills"] if s.lower() in low]
         flagged = check_claims(parsed, claims)
-        violations = validate(parsed, self._texts[resume_id], resume, note)
+        violations = validate(parsed, self._texts[resume_id], resume, note,
+                              allowed_mentions=[job["title"], job["company"]])
         violations += check_grounding(resume, blocks, allow_job=False)
         violations += check_grounding(note, blocks)
         content = {"tailoredResume": resume, "coverNote": note, "aiGenerated": True}
