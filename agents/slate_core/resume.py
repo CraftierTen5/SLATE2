@@ -642,6 +642,11 @@ def extract_pdf_text(data: bytes) -> str:
     # normalizes line endings on read - so CR bytes here would make the saved
     # version permanently 'dirty' and block approve/export. Store LF only.
     text = text.replace("\r\n", "\n").replace("\r", "\n")
+    # Tabular templates extract as one word per line ('word\t' / ' \xa0word').
+    # Reconstruct the logical lines for storage as well: same words, readable
+    # source in the draft editor and exports. parse_resume applies the same
+    # join itself, so parse results are unchanged (user-approved, 2026-11-11).
+    text = _join_tab_split_lines(text)
     if len(text.strip()) < 20:
         raise ParseError("No selectable text found in that PDF (a scanned image will not work).")
     return text
