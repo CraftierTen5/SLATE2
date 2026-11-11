@@ -695,11 +695,17 @@ const pageParts={resume:["s1"],targets:["targetWorkspace"],draft:["s3"],comparis
 let activePart=location.pathname.slice(1)||"resume",routeAnimations=[];
 const routeMotion=window.matchMedia("(prefers-reduced-motion: reduce)");
 routeMotion.addEventListener("change",()=>{if(routeMotion.matches){routeAnimations.forEach(a=>a.cancel());routeAnimations=[]}});
+function watchRouteMotion(){
+ if(!routeAnimations.length)return;
+ if(window.matchMedia("(prefers-reduced-motion: reduce)").matches){routeAnimations.forEach(a=>a.cancel());routeAnimations=[];return}
+ requestAnimationFrame(watchRouteMotion);
+}
 function animatePart(part){
  routeAnimations.forEach(a=>a.cancel());routeAnimations=[];
  if(routeMotion.matches)return;
  const elements=[document.querySelector(".pagehead"),...pageParts[part].map(id=>$(id))];
- elements.forEach((element,i)=>{if(element?.animate)routeAnimations.push(element.animate([{opacity:.3,transform:"translateY(9px)"},{opacity:1,transform:"translateY(0)"}],{duration:430,delay:i*35,easing:"cubic-bezier(.22,1,.36,1)"}))});
+ elements.forEach((element,i)=>{if(element?.animate){const a=element.animate([{opacity:.3,transform:"translateY(9px)"},{opacity:1,transform:"translateY(0)"}],{duration:430,delay:i*35,easing:"cubic-bezier(.22,1,.36,1)"});routeAnimations.push(a);a.finished.then(()=>{const j=routeAnimations.indexOf(a);if(j>=0)routeAnimations.splice(j,1)},()=>{})}});
+ requestAnimationFrame(watchRouteMotion);
 }
 function routePage(part,replace=false){
  if(!pageParts[part])part="resume";const changed=part!==activePart;activePart=part;
