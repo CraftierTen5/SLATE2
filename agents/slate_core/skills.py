@@ -11,7 +11,10 @@ SKILL_ALIASES = {
     "statistics": (), "fastapi": (), "postgresql": ("postgres",),
     "git": (), "javascript": (), "react": ("react.js", "reactjs"),
     "typescript": (), "css": (), "pytorch": (), "tableau": (),
-    "java": (), "c++": (), "docker": (), "aws": ("amazon web services",),
+    "java": (), "c++": (), "c#": (), "docker": (), "aws": ("amazon web services",),
+    "node.js": ("nodejs",),
+    "asp.net core": (), "entity framework": ("entity framework core", "ef core"),
+    "ansys": (), "gd&t": (), "fea": ("finite element analysis",), "dfmea": (),
     "figma": (), "machine learning": (), "power bi": ("powerbi",),
     "autocad": (), "solidworks": (), "matlab": (), "tally": ("tally erp", "tallyprime"),
     "communication": ("communications", "communication skills"),
@@ -93,16 +96,23 @@ def explicit_skill_evidence(text):
     or an inline list after that heading. Unknown section formats stay unsupported.
     Values remain candidate skill mentions for human review, not verified facts.
     """
-    out, seen, active = [], set(), False
+    out, seen, active, started, blanks = [], set(), False, False, 0
     for line in text.splitlines():
         line = line.strip()
         if not line:
-            active = False
+            # Markdown puts a single blank line between a heading and its list;
+            # tolerate one, but a second blank (or any blank once items have
+            # started) ends the section.
+            blanks += 1
+            if started or blanks > 1:
+                active = False
             continue
+        blanks = 0
         line = _mdless(line)
         heading = _skill_heading_match(line)
         if heading:
             active = True
+            started = False
             content = heading.group(1)
         elif _SECTION_HEADING.fullmatch(line):
             active = False
@@ -110,17 +120,27 @@ def explicit_skill_evidence(text):
         elif active:
             # Wrapped narrative continuation lines are not standalone list items.
             if not re.match(r"^[•*\-–]\s+", line) and not re.search(r"[,;|•]", line):
-                if _SECTION_HEADING.fullmatch(line): active = False
+                # A colon-terminated line is a sub-label or unknown heading
+                # ('Computer:'), not prose: the section ends here.
+                if _SECTION_HEADING.fullmatch(line) or line.endswith((":", "：")): active = False
                 continue
             content = re.sub(r"^[•*\-–]\s*", "", line)
             # An unknown heading ends the section rather than consuming its text.
             if content.endswith((":", "：")):
                 active = False
                 continue
+            # A short label prefix ('Technical: SolidWorks, ...') is not an item.
+            label = re.match(r"^([A-Za-z][\w ]{0,28})[:：]\s+(.+[,;|•].+)$", content)
+            if label:
+                content = label.group(2)
+            started = True
         else:
             continue
         for part in re.split(r"[,;|•]", content):
             phrase = part.strip().strip(".")
+            # A comma inside parentheses splits an item; drop the orphaned paren.
+            if phrase.endswith(")") and "(" not in phrase:
+                phrase = phrase[:-1].strip()
             if not phrase or len(phrase) > 70 or len(phrase.split()) > 5:
                 continue
             # Reject sentence-like claims, dates/contact values, and labels.
@@ -133,6 +153,10 @@ def explicit_skill_evidence(text):
             exact = next((e for e in matches if e["matchedText"] == normalized(phrase)), None)
             if matches and not exact:
                 continue  # avoid duplicating prose/qualifiers as a second skill
+            # A lone past-tense word is a wrapped bullet opener ('Communicated
+            # regularly with...' split by PDF artifacts), not a skill.
+            if exact is None and len(phrase.split()) == 1 and re.search(r"ed$", phrase, re.I):
+                continue
             skill = exact["skill"] if exact else normalized(phrase)
             if skill not in seen:
                 out.append({"skill": skill, "matchedText": phrase, "source": "explicit_skill_list"})
@@ -213,7 +237,7 @@ def plain_list_review_candidates(text):
                                 "source": "ambiguous_plain_skills_block",
                                 "reason": "Unbulleted skills-section text may be a list or wrapped prose; not counted without review."})
         pending.clear()
-    active = False
+    active, blanks = False, 0
     for raw in text.splitlines():
         line = _mdless(raw.strip())
         heading = _skill_heading_match(line)
@@ -221,7 +245,15 @@ def plain_list_review_candidates(text):
             flush(); active = not bool(heading.group(1)); continue
         if not active:
             continue
-        if not line or _SECTION_HEADING.fullmatch(line) or line.endswith((":", "：")):
+        if not line:
+            # A single blank after the heading is markdown spacing; a second
+            # consecutive blank, or a blank once items are pending, ends it.
+            blanks += 1
+            if pending or blanks > 1:
+                flush(); active = False
+            continue
+        blanks = 0
+        if _SECTION_HEADING.fullmatch(line) or line.endswith((":", "：")):
             flush(); active = False; continue
         if (re.match(r"^[•*\-–]\s+", line) or re.search(r"[,;|•]", line)
                 or len(line) > 70 or len(line.split()) > 5
