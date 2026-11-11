@@ -117,3 +117,45 @@ def test_interview_http_routes_and_status_codes():
     assert c.post(f'/v1/interview/{sid}/answer', json={'text': 'extra'}).status_code == 409
     assert c.get(f'/v1/interview/{sid}/feedback').status_code == 200
     assert c.get('/v1/interview/sid_999/feedback').status_code == 404
+
+
+def test_authenticated_end_report_restart_and_account_isolation(tmp_path):
+    """Served construction: bearer token -> verified user -> that user's
+    service over the real per-user store. DevAuth + sqlite only; no live
+    provider, no Postgres. Interview sessions and coaching memory must stay
+    inside the owning account across restarts."""
+    from fastapi.testclient import TestClient
+    from slate_core.auth import DevAuth
+    from slate_core.user_store import SqlUserStore
+    from slate_api.app import create_authenticated_app
+
+    url = 'sqlite:///' + str(tmp_path / 'state.db')
+
+    def client():
+        return TestClient(create_authenticated_app(DevAuth(), SqlUserStore(url)))
+
+    c = client()
+    a = {'Authorization': 'Bearer dev:a@example.com'}
+    b = {'Authorization': 'Bearer dev:b@example.com'}
+    started = c.post('/v1/interview/mock', headers=a,
+                     json={'targetRole': 'Human Resources', 'mode': 'voice'})
+    assert started.status_code == 200
+    i = started.json()['sessionId']
+    assert started.json()['coachMode'] == 'deterministic_fallback'  # no key -> honest fallback
+    assert c.post(f'/v1/interview/{i}/answer', headers=a,
+                  json={'text': 'I checked employee policy and documented the complaint.'}).status_code == 200
+    assert c.post(f'/v1/interview/{i}/end', headers=b).status_code == 404  # not b's session
+    f = c.post(f'/v1/interview/{i}/end', headers=a).json()
+    assert f['ended'] and f['answeredCount'] == 1
+    # Restart: a fresh app over the same sqlite file keeps a's interview.
+    c = client()
+    review = c.get(f'/v1/interview/{i}/feedback', headers=a).json()
+    assert review['answerReviews'][0]['answer'].startswith('I checked')
+    assert c.post(f'/v1/interview/{i}/answer', headers=a, json={'text': 'extra'}).status_code == 409
+    assert c.post(f'/v1/interview/{i}/end', headers=a).json()['answeredCount'] == 1
+    assert c.get(f'/v1/interview/{i}/feedback', headers=b).status_code == 404
+    # Coaching memory is per-user: b starts the same role with no carried weak areas.
+    started_b = c.post('/v1/interview/mock', headers=b,
+                       json={'targetRole': 'Human Resources', 'mode': 'text'})
+    assert started_b.status_code == 200
+    assert started_b.json()['carriedFromEarlier'] == []

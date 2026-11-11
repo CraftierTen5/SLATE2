@@ -7,7 +7,7 @@ from playwright.sync_api import sync_playwright
 ROOT=Path(__file__).resolve().parents[1]
 with tempfile.TemporaryDirectory() as tmp:
  env=dict(os.environ,SLATE_DEV_AUTH='1',SLATE_STATE_URL='sqlite:///'+tmp+'/state.db',GEMINI_API_KEY='',LLM_API_KEY='')
- proc=subprocess.Popen([os.environ.get('API_PYTHON',os.sys.executable),'-m','uvicorn','--factory','agents.slate_api.app:create_app','--host','127.0.0.1','--port','8021'],cwd=ROOT,env=env,stdout=open('/tmp/interview-server.log','w'),stderr=subprocess.STDOUT)
+ proc=subprocess.Popen([os.environ.get('API_PYTHON',os.sys.executable),'-m','uvicorn','agents.slate_api.app:app','--host','127.0.0.1','--port','8021'],cwd=ROOT,env=env,stdout=open('/tmp/interview-server.log','w'),stderr=subprocess.STDOUT)
  try:
   for _ in range(100):
    try:urllib.request.urlopen('http://127.0.0.1:8021/v1/config',timeout=1);break
