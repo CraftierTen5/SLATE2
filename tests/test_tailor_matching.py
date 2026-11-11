@@ -96,3 +96,31 @@ class EducationRendering(unittest.TestCase):
                               "She interned at MechDesign Labs as a CAD Intern.")
         d = build_draft(parsed, {"title": "Data Analyst", "company": "ExampleCo", "skills": ["Python"]})
         self.assertIn("Education: Studied Mechanical Engineering, NIT Trichy (2026)", d["tailoredResume"])
+
+
+class GpaPreservation(unittest.TestCase):
+    """GPA/CGPA is carried only when literally stated, label and scale as written."""
+
+    JOB = {"title": "Data Analyst", "company": "ExampleCo", "skills": ["Python"]}
+
+    def test_cgpa_with_scale_preserved_verbatim(self):
+        parsed = parse_resume("Asha Verma\nEducation\nB.Tech Computer Science, IIITM Gwalior, CGPA 8.9/10, 2027\nSkills: Python, Git, SQL\n")
+        d = build_draft(parsed, self.JOB)
+        self.assertIn("Education: B.Tech, IIITM Gwalior, CGPA 8.9/10 (2027)", d["tailoredResume"])
+
+    def test_no_gpa_means_no_gpa_line(self):
+        parsed = parse_resume("Asha Verma\nEducation\nB.Tech Computer Science, IIITM Gwalior, 2027\nSkills: Python, Git, SQL\n")
+        d = build_draft(parsed, self.JOB)
+        self.assertNotIn("GPA", d["tailoredResume"])
+        self.assertNotIn("gpa", parsed["education"][0])
+
+    def test_orphan_gpa_mention_not_promoted_to_education(self):
+        parsed = parse_resume("Asha Verma\nMy GPA was 3.9 overall.\nSkills: Python, Git, SQL\nExperience\nIntern, ExampleCo\n")
+        self.assertEqual(parsed["education"], [])
+
+    def test_prose_study_line_carries_literal_gpa(self):
+        parsed = parse_resume("Priya Nair is a final-year student.\n"
+                              "She studied Mechanical Engineering at NIT Trichy, graduating 2026, CGPA 8.1.\n"
+                              "She interned at MechDesign Labs as a CAD Intern.")
+        d = build_draft(parsed, self.JOB)
+        self.assertIn("Education: Studied Mechanical Engineering, NIT Trichy, CGPA 8.1 (2026)", d["tailoredResume"])

@@ -56,6 +56,12 @@ def _education_entry(part):
     """Degree, institute and year from one education line; institute only if literally present."""
     part = part.strip().lstrip("-•* ")
     m = _DEGREE.search(part)
+    # GPA/CGPA only when literally stated on the same education line, label and
+    # scale kept exactly as written; never computed, converted or invented.
+    gpa = None
+    gm = re.search(r"\b(cgpa|gpa)\b\s*[:=-]?\s*(\d+(?:\.\d+)?(?:\s*/\s*\d+(?:\.\d+)?)?)", part, re.I)
+    if gm:
+        gpa = {"label": gm.group(1).upper(), "value": re.sub(r"\s+", "", gm.group(2))}
     if not m:
         # Prose education: "studied <subject> at <institute>, graduating <year>".
         # The subject is kept as written; it is what the source literally states.
@@ -64,8 +70,11 @@ def _education_entry(part):
             if sm and not re.search(r"\b(?:seeking|looking|aspir|plans? to|wants? to)\b", part, re.I):
                 years = re.findall(r"(?:19|20)\d\d", part)
                 # Subject of study as written, not an earned-credential claim.
-                return {"degree": sm.group(1).strip(" ,."), "institute": sm.group(2).strip(" ,."),
-                        "year": int(years[-1]) if years else None, "subjectOnly": True}
+                entry = {"degree": sm.group(1).strip(" ,."), "institute": sm.group(2).strip(" ,."),
+                         "year": int(years[-1]) if years else None, "subjectOnly": True}
+                if gpa:
+                    entry["gpa"] = gpa
+                return entry
         return None
     if len(part) > 160:
         return None
@@ -90,7 +99,10 @@ def _education_entry(part):
             inst = seg
             break
     # Source casing is preserved as written (only the '..' artifact is normalized).
-    return {"degree": m.group(1).replace("..", "."), "institute": inst, "year": year}
+    entry = {"degree": m.group(1).replace("..", "."), "institute": inst, "year": year}
+    if gpa:
+        entry["gpa"] = gpa
+    return entry
 
 
 def _experience_entry(line):

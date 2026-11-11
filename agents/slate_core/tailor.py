@@ -30,6 +30,8 @@ def build_draft(parsed: dict, job: dict, profile: dict = None) -> dict:
         # A prose "studied X" subject is labeled as study, never as an earned degree.
         line = (f"Education: Studied {e['degree']}" if e.get("subjectOnly") else f"Education: {e['degree']}")
         line += f", {e['institute']}" if e.get("institute") else ""
+        if e.get("gpa"):
+            line += f", {e['gpa']['label']} {e['gpa']['value']}"
         resume.append(line + (f" ({e['year']})" if e["year"] else ""))
     note = (f"Hello {job['company']} team, I am applying for the {job['title']} role. "
             + (f"My background includes {', '.join(matched)}. " if matched else "")
