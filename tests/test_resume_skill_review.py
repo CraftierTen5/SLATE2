@@ -166,3 +166,19 @@ def test_added_skill_retains_user_statement_origin_when_confirmed_again():
     e=second['parsed']['skillEvidence'][0]
     assert e['source']=='user_statement' and e['reviewStatus']=='user_confirmed'
     assert 'not independently verified' in s._texts[second['resumeId']]
+
+
+def test_volunteer_section_heading_is_reviewed_not_unrecognized():
+    # Audit F16 (10-sample internet audit, 2026-11-11): the parser recognized
+    # 'Volunteer Experience' history sections (F11) but the review label set
+    # did not, so the laverne sample showed 'experience: not recognized' while
+    # two literal volunteer entries were extracted. Mirror the parser's exact
+    # heading vocabulary; the label stays a review prompt, never a claim.
+    r = section_previews("Leo Leopard\nVOLUNTEER EXPERIENCE\nLionLike MindState\nSummer 2013, 2014\nVolunteer\nSKILLS\nPython")
+    assert r["experience"]["status"] == "source_section_needs_review"
+    assert "LionLike MindState" in r["experience"]["sourceLines"]
+
+
+def test_volunteers_plural_line_is_not_a_section_heading():
+    r = section_previews("Sam\nSkills\nPython\nVolunteers needed for the beach cleanup are welcome")
+    assert r["experience"]["status"] == "not_recognized"
