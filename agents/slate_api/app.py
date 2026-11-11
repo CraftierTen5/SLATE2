@@ -282,6 +282,17 @@ def _shell(r: APIRouter) -> FastAPI:
     # --- Interview feature ---
     web_root = os.path.join(os.path.dirname(__file__), "..", "..", "web")
     web_interview = os.path.join(web_root, "interview.html")
+    web_index = os.path.join(web_root, "index.html")
+
+    @app.get("/resume", include_in_schema=False)
+    @app.get("/targets", include_in_schema=False)
+    @app.get("/draft", include_in_schema=False)
+    @app.get("/comparisons", include_in_schema=False)
+    @app.get("/roadmap", include_in_schema=False)
+    @app.get("/", include_in_schema=False)
+    def index_page():
+        return FileResponse(web_index)
+
     @app.get("/interview", include_in_schema=False)
     def interview_page():
         return FileResponse(web_interview) if os.path.exists(web_interview) else JSONResponse({"message": "Interview page not found"})
