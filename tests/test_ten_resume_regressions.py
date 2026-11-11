@@ -106,3 +106,29 @@ def test_bdes_and_mdes_degrees_are_recognized():
     assert [(e['degree'], e['year']) for e in p['education']] == [('B.Des', 2025)]
     p = parse_resume('Aarav Gupta\nEducation\nM.Des, 2024\n')
     assert [(e['degree'], e['year']) for e in p['education']] == [('M.Des', 2024)]
+
+
+def test_prose_studied_at_pattern_yields_education():
+    parsed = parse_resume("Priya Nair is a final-year student with AutoCAD skills.\n"
+                          "She studied Mechanical Engineering at NIT Trichy, graduating 2026.\n"
+                          "She interned at MechDesign Labs as a CAD Intern.")
+    assert parsed["education"] == [{"degree": "Mechanical Engineering", "institute": "NIT Trichy", "year": 2026}]
+
+
+def test_prose_worked_at_as_pattern_yields_experience():
+    parsed = parse_resume("Aditya Rao is a backend developer skilled in Python, FastAPI and PostgreSQL.\n"
+                          "He worked at TechNest as a Backend Intern in 2025.\n"
+                          "He has a B.Tech in Computer Science from 2026.")
+    assert parsed["experience"] == [{"title": "Backend Intern", "org": "TechNest", "months": None}]
+    assert parsed["education"] == [{"degree": "B.Tech", "institute": "", "year": 2026}]
+
+
+def test_prose_aspirational_degree_mention_not_promoted():
+    parsed = parse_resume("Asha Verma\nShe wants a B.Tech someday.\nSkills: Python, Git, SQL\nExperience\nIntern, ExampleCo\n")
+    assert parsed["education"] == []
+
+
+def test_prose_history_in_objective_section_not_promoted():
+    parsed = parse_resume("Asha Verma\nSkills: Python, Git, SQL\nExperience\nIntern, ExampleCo\n"
+                          "Career Objective\nHe worked at BigCo as a Data Analyst in 2024.\n")
+    assert parsed["experience"] == [{"title": "Intern", "org": "ExampleCo", "months": None}]

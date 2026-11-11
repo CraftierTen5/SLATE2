@@ -56,12 +56,26 @@ def _education_entry(part):
     """Degree, institute and year from one education line; institute only if literally present."""
     part = part.strip().lstrip("-•* ")
     m = _DEGREE.search(part)
-    if not m or len(part) > 160:
+    if not m:
+        # Prose education: "studied <subject> at <institute>, graduating <year>".
+        # The subject is kept as written; it is what the source literally states.
+        if len(part) <= 160:
+            sm = re.search(r"\bstudied\s+(.{2,60}?)\s+at\s+((?:[A-Z0-9][\w&.'-]*)(?:\s+(?:[A-Z0-9][\w&.'-]*|of|and))*?)(?=\s*[,.;]|\s+(?:graduating|in|from|during)\b|\s*$)", part, re.I)
+            if sm and not re.search(r"\b(?:seeking|looking|aspir|plans? to|wants? to)\b", part, re.I):
+                years = re.findall(r"(?:19|20)\d\d", part)
+                return {"degree": sm.group(1).strip(" ,."), "institute": sm.group(2).strip(" ,."),
+                        "year": int(years[-1]) if years else None}
+        return None
+    if len(part) > 160:
         return None
     # A degree token must start the line (or follow a bullet), so prose that merely
     # mentions "master" or "B.E." later in a sentence is not promoted to history.
-    if m.start() > 3 and not re.match(r"^(?:\W*)(?:completed|pursued|graduated)", part, re.I):
-        return None
+    # Possession/completion lead-ins ("He has a B.Tech", "earned an M.Sc") count.
+    if m.start() > 3:
+        prefix = part[:m.start()].strip()
+        if not (re.match(r"^(?:\W*)(?:completed|pursued|graduated|earned|received)\b", prefix, re.I)
+                or re.fullmatch(r"(?:\w+\s+)?(?:has|have|holds?)\s+(?:a|an|the)", prefix, re.I)):
+            return None
     y = re.search(r"((?:19|20)\d\d)", part)
     year = None
     if y:
@@ -105,6 +119,14 @@ def _experience_entry(line):
         org = m.group(2).strip(" .")
         if org and not _DATEISH.match(org):
             return {"title": m.group(1), "org": org, "months": mval}
+    # prose: "worked/interned at <Org> as a <Title>"
+    m = re.search(r"\b(?:worked|interned|served)\s+(?:at|with|for)\s+"
+                  r"((?:[A-Z0-9][\w&.'-]*)(?:\s+(?:[A-Z0-9][\w&.'-]*|&|of|and))*?)"
+                  r"\s+as\s+(?:a|an|the)\s+((?:[A-Za-z]+\s){0,3}?(?:" + _TITLES + r"))\b", line, re.I)
+    if m and not re.search(r"\b(?:seeking|looking|aspir)", line, re.I):
+        org = m.group(1).strip(" .")
+        if org and not _DATEISH.match(org):
+            return {"title": m.group(2).strip(), "org": org, "months": mval}
     return None
 
 
