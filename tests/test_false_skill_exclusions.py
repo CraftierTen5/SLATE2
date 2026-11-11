@@ -87,3 +87,34 @@ def test_languages_and_achievements_headings_end_skills_mode():
     assert set(parsed["skills"]) >= {"sql", "python"}
     assert all("hackathon" not in e["skill"] for e in parsed["skillEvidence"])
     assert "english" not in parsed["skills"] and "hindi" not in parsed["skills"]
+
+
+def test_study_line_without_degree_token_does_not_earn_the_subject_as_a_skill():
+    # Audit D1 original repro: "She studied Communication Design at NID
+    # Ahmedabad" has no degree token, yet 'communication' was accepted as an
+    # earned skill. Studying a subject is never an earned credential.
+    text = (
+        "Riya Sharma\n"
+        "She studied Communication Design at NID Ahmedabad, graduating in 2026.\n"
+        "Skills: Figma, user research\n"
+    )
+    parsed = parse_resume(text)
+    assert "communication" not in parsed["skills"]
+    assert all(e["skill"] != "communication" for e in parsed["skillEvidence"])
+    assert any(e["skill"] == "communication" and "study" in e["reason"] for e in parsed["uncertainSkills"])
+    # The study line still parses as a labeled subject of study, not a degree.
+    assert parsed["education"][0]["subjectOnly"] is True
+    assert parsed["education"][0]["degree"] == "Communication Design"
+    # Genuine skill-list mentions elsewhere are unaffected.
+    assert "figma" in parsed["skills"]
+
+
+def test_genuine_mention_off_the_study_line_still_counts():
+    text = (
+        "Riya Sharma\n"
+        "She studied Communication Design at NID Ahmedabad in 2026.\n"
+        "Work Experience\n"
+        "Led client communication for a design studio.\n"
+    )
+    parsed = parse_resume(text)
+    assert "communication" in parsed["skills"]

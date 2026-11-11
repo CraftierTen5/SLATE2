@@ -142,6 +142,8 @@ _UNCERTAIN = re.compile(
 _DEGREE = re.compile(
     r"(?<![a-z])(b\.?\s?tech|m\.?\s?tech|b\.?e\.?|m\.?e\.?|bca|mca|b\.?sc\.?|m\.?sc\.?|b\.?com\.?|m\.?com\.?|"
     r"b\.?a\.?|m\.?a\.?|b\.?ed\.?|m\.?ed\.?|b\.?des\.?|m\.?des\.?|bba|mba|pgdm|b\.?arch|ph\.?d|diploma|bachelor|master)(?![a-z])", re.I)
+_STUDY_LINE = re.compile(
+    r"\b(?:studied|studying|study of|read for|majored in|speciali[sz]ed in|pursued|pursuing)\b", re.I)
 _INSTRUCTION_HEADING = re.compile(
     r"^(?:required skills|desired skills|skills to learn|learning goals|"
     r"example skills|job requirements|instructions|tips)\s*[:：]?\s*(.*)$", re.I)
@@ -246,11 +248,12 @@ def resume_skill_evidence(text):
                     # "Positions of Responsibility" is a section heading; its words
                     # are not evidence of a responsibility skill.
                     flagged.setdefault(skill, dict(e, reason="Appears in a section heading; a heading word is not a skill mention; not counted without review."))
-                elif _DEGREE.search(line):
-                    # A degree line names subjects of study; e.g. "B.Des Communication
-                    # Design" is not evidence of a communication skill. Flag for review
+                elif _DEGREE.search(line) or _STUDY_LINE.search(line):
+                    # A degree or study line names subjects of study; e.g. "B.Des
+                    # Communication Design" or "She studied Communication Design at
+                    # NID" is not evidence of a communication skill. Flag for review
                     # instead of accepting. A mention elsewhere can still be accepted.
-                    flagged.setdefault(skill, dict(e, reason="Appears on a degree or education line; may name a subject of study, not a skill; not counted without review."))
+                    flagged.setdefault(skill, dict(e, reason="Appears on a degree, education or study line; may name a subject of study, not a skill; not counted without review."))
                 else:
                     accepted.setdefault(skill, e)
     for e in explicit_skill_evidence(text):
