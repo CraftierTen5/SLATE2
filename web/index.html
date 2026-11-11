@@ -73,9 +73,9 @@ button:disabled{opacity:.35;cursor:not-allowed}
 .pdfstatus{margin:10px 0;padding:10px 12px;border:1px solid var(--line);border-radius:10px;background:var(--soft);font-size:13px;color:var(--mut);line-height:1.5;overflow-wrap:anywhere}
 .aiconsent{display:flex;gap:8px;align-items:flex-start}
 .pdfstatus[hidden]{display:none}
-.pdfstatus .pl.typing::after{content:"";display:inline-block;width:6px;height:1em;margin-left:2px;vertical-align:text-bottom;background:currentColor;animation:pdfcaret 1s steps(1) infinite}
+.pdfstatus .pl .rest{visibility:hidden}
+.pdfstatus .pl.typing>span:first-child::after{content:"";display:inline-block;width:2px;height:1.05em;margin-left:1px;vertical-align:text-bottom;background:currentColor}
 .pdfstatus .pl.err{color:var(--bad)}
-@keyframes pdfcaret{50%{opacity:0}}
 input[type=file]{max-width:230px;font-size:12.5px}
 .bad{color:var(--bad)}
 .ok{color:var(--ok)}
@@ -589,8 +589,31 @@ $("parse").onclick=async()=>{
 }catch(e){if(e instanceof StaleResponse)return;say("parsed",e.message,1)}finally{if(request===sourceRequest){$("parse").textContent="Parse resume text ↗";$("parse").removeAttribute("aria-busy")}}};
 let explainAbort=null;const EXPLAIN_WAIT_MS=8000;
 function abortExplain(){if(explainAbort){explainAbort.abort();explainAbort=null}}
-function pdfProgress(){const box=$("pdfstatus");box.hidden=false;box.textContent="";let queue=Promise.resolve(),instant=window.matchMedia("(prefers-reduced-motion: reduce)").matches;
-  return{line(text,cls){queue=queue.then(()=>new Promise(done=>{const d=document.createElement("div");d.className="pl "+(cls||"");box.appendChild(d);if(instant){d.textContent=text;return done()}d.classList.add("typing");let i=0;const step=()=>{if(instant){d.textContent=text;d.classList.remove("typing");return done()}i+=2;d.textContent=text.slice(0,i);if(i>=text.length){d.classList.remove("typing");return done()}setTimeout(step,14)};step()}))},flush(){instant=true},hide(){instant=true;box.hidden=true;box.textContent=""}}}
+let activeProg=null;
+function pdfProgress(){
+  if(activeProg)activeProg.kill();
+  const box=$("pdfstatus");box.hidden=false;box.textContent="";
+  const seg=window.Intl&&Intl.Segmenter?new Intl.Segmenter(undefined,{granularity:"grapheme"}):null;
+  const split=t=>seg?Array.from(seg.segment(t),x=>x.segment):Array.from(t);
+  const q=[];let cur=null,raf=0,last=0,acc=0,dead=false,instant=window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+  const make=it=>{const d=document.createElement("div");d.className="pl "+(it.cls||"");const a=document.createElement("span"),r=document.createElement("span");r.className="rest";d.append(a,r);box.appendChild(d);return{d,a,r,g:split(it.text),n:0,text:it.text}};
+  const done=c=>{c.d.classList.remove("typing");c.a.textContent=c.text;c.r.remove()};
+  function tick(ts){raf=0;if(dead)return;
+    if(instant){while(cur||q.length){if(!cur)cur=make(q.shift());done(cur);cur=null}return}
+    if(!last)last=ts;const dt=Math.min(ts-last,64);last=ts;
+    // One grapheme at a time, 70-120 per second (faster only when a long backlog builds up).
+    const backlog=(cur?cur.g.length-cur.n:0)+q.reduce((n,i)=>n+i.text.length,0);
+    acc+=Math.min(120,Math.max(70,backlog/2.5))*dt/1000;
+    while(acc>=1&&(cur||q.length)){if(!cur){cur=make(q.shift());cur.d.classList.add("typing")}cur.n++;acc--;if(cur.n>=cur.g.length){done(cur);cur=null}}
+    if(cur){cur.a.textContent=cur.g.slice(0,cur.n).join("");cur.r.textContent=cur.g.slice(cur.n).join("")}
+    if(cur||q.length)raf=requestAnimationFrame(tick);else{last=0;acc=0}
+  }
+  const api={line(text,cls){if(dead)return;q.push({text,cls});if(!raf)raf=requestAnimationFrame(tick)},
+    flush(){instant=true;if(raf)cancelAnimationFrame(raf);tick(0)},
+    kill(){dead=true;if(raf)cancelAnimationFrame(raf)},
+    hide(){api.kill();box.hidden=true;box.textContent=""}};
+  activeProg=api;return api;
+}
 function kb(n){return n<1024?n+" B":(n/1024).toFixed(n<10240?1:0)+" KB"}
 async function runExplain(j,request,auth,prog){
   if(!$("aiconsent").checked){prog.line("AI explanation is off. Tick the box above to have a model explain the result.");return}
