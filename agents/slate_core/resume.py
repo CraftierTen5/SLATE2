@@ -11,7 +11,7 @@ MAX_PDF_PAGES = 20
 _QUALIFICATION_UNCERTAIN = re.compile(
     r"\b(?:no|not|never|without|lack|lacking|unfamiliar|seeking|aspir(?:e|es|ing)|"
     r"want(?:s)? to|wish(?:es)? to|plan(?:s|ning)? to|hop(?:e|es|ing) to|"
-    r"interested in|learning|learn|instruction|example(?!\s+(?:university|institute|college|school))|pursuing|prospective)\b", re.I)
+    r"interested in|learning|learn|instruction|example|pursuing|prospective)\b", re.I)
 
 class ParseError(ValueError):
     pass
@@ -157,6 +157,17 @@ def name_candidate(lines):
     return "Unknown", {"status": "not_recognized", "sourceText": None}
 
 
+def _qualification_uncertain(line):
+    """'Example' marks sample/instruction text, but a line that starts with a degree may
+    name an institute 'Example University' / 'IIT Example'. Only that shape is exempt;
+    every other uncertainty word still applies, and non-degree lines keep 'example'."""
+    probe = line.lstrip("-•* ")
+    m = _DEGREE.match(probe)
+    if m and re.match(r"^(?:\W*|\s+)", probe[m.end():]):
+        line = re.sub(r"\bexample\b", " ", line, flags=re.I)
+    return bool(_QUALIFICATION_UNCERTAIN.search(line))
+
+
 def qualification_lines(text):
     """Conservative literal lines eligible for degree/work extraction, not proof."""
     excluded_section = False
@@ -181,7 +192,7 @@ def qualification_lines(text):
         # A literal degree/job-title mention is not necessarily a qualification.
         # Conservative exclusion keeps ambiguous text available for source review
         # rather than promoting a denial, aspiration or example into history.
-        if excluded_section or _QUALIFICATION_UNCERTAIN.search(l):
+        if excluded_section or _qualification_uncertain(l):
             continue
         yield l
 

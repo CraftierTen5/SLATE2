@@ -80,3 +80,14 @@ def test_section_preview_recognises_common_alternate_headings():
     assert rev['education']['status'] == 'source_section_needs_review'
     assert rev['education']['sourceLines'] == ['MBA (HR), Example University, 2025']
     assert rev['experience']['sourceLines'] == ['HR Intern, Zenith Corp']
+
+
+def test_example_instruction_line_is_not_promoted_but_example_institute_is():
+    p = parse_resume('Sam Roy\nEducation\nExample, Engineer at FakeCo (12 months)\n')
+    assert p['experience'] == [] and p['education'] == []
+    p = parse_resume('Sam Roy\nEducation\nB.Tech, Example, 2025\nExperience\nExample: Analyst at FakeCo (3 months)\n')
+    assert p['education'] == [{'degree': 'B.TECH', 'institute': 'Example', 'year': 2025}]
+    assert p['experience'] == []
+    p = parse_resume('Sam Roy\nEducation\nB.Tech Computer Science, IIT Example, 2023-2027\nMBA, Example University, 2025\n')
+    assert [e['institute'] for e in p['education']] == ['IIT Example', 'Example University']
+    assert parse_resume('Sam Roy\nEducation\nB.Tech, Example, 2025; Seeking engineer at FakeCo\n')['experience'] == []
