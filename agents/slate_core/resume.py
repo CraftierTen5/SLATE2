@@ -1,7 +1,7 @@
 import io
 import re
 import unicodedata
-from .skills import skill_evidence, resume_skill_evidence, _DEGREE
+from .skills import skill_evidence, resume_skill_evidence, _DEGREE, _SECTION_HEADING
 from .resume_review import section_previews
 
 MAX_PDF_BYTES = 5_000_000
@@ -30,12 +30,18 @@ def parse_resume(text: str) -> dict:
     evidence, uncertain = resume_skill_evidence(text)
     skills = [item["skill"] for item in evidence]
     education, experience = [], []
-    for l in qualification_lines(text):
+    qlines = list(qualification_lines(text))
+    for qi, l in enumerate(qlines):
         for part in re.split(r";", l):
             edu = _education_entry(part)
             if edu:
                 education.append(edu)
         exp = _experience_entry(l) if l != lines[0] else None
+        if exp is None and l != lines[0]:
+            prev = qlines[qi - 1] if qi > 0 and qlines[qi - 1] != lines[0] else ""
+            exp = _title_line_join(l, prev,
+                                   qlines[qi + 1] if qi + 1 < len(qlines) else "",
+                                   name=name)
         if exp and not _EDU_WORDS.search(l):
             experience.append(exp)
     return {"name": name, "nameEvidence": name_evidence, "skills": skills, "education": education, "experience": experience,
@@ -50,6 +56,21 @@ _TITLES = (r"internship|intern|trainee|developer|analyst|engineer|executive|mana
            r"officer|teacher|coordinator|specialist|administrator|technician|accountant|recruiter|lead|"
            r"representative|scientist|architect|tutor|coach")
 _TITLE_RE = re.compile(r"\b(?:[A-Za-z]+\s){0,3}?(?:" + _TITLES + r")\b", re.I)
+_TITLE_SUFFIX = r"(?:\s+(?:I{1,3}|IV|V|VI{0,3}))?"
+_TITLE_FULL = re.compile(r"(?:[A-Za-z]+\s){0,3}?(?:" + _TITLES + r")" + _TITLE_SUFFIX + r"$", re.I)
+_GERUND = (r"(?:build|building|built|manag(?:e|ed|ing)|wrote|writing|led|leading|work(?:ed|ing)?|"
+           r"develop(?:ed|ing)?|design(?:ed|ing)?|creat(?:e|ed|ing)|deliver(?:ed|ing)?|"
+           r"ship(?:ped|ping)?|launch(?:ed|ing)?|own(?:ed|ing)?|drove|driving|"
+           r"support(?:ed|ing)?|maintain(?:ed|ing)?|implement(?:ed|ing)?)")
+_ORG_SUFFIX = re.compile(
+    r"\b(?:inc|llc|ltd|corp|co|pvt|private|limited|company|university|college|institute|"
+    r"technologies|tech|systems|solutions|labs|studio|group|organization|organisation|"
+    r"industries|enterprises|consulting|services|machines|implements|softlabs|board)\b\.?", re.I)
+
+def _strip_md(line):
+    """Remove markdown heading/emphasis markers for field detection; source text stays as written."""
+    s2 = re.sub(r"^#{1,6}\s+", "", line.strip())
+    return re.sub(r"[*_`]+", "", s2).strip()
 _SUBJECT = re.compile(
     r"^(?:[A-Za-z&]+[\s,]+){0,3}(?:science|arts|applications|studies|engineering|technology|"
     r"mathematics|statistics|commerce|humanities|administration|education|law|medicine)s?$", re.I)
@@ -127,26 +148,75 @@ def _education_entry(part):
     return entry
 
 
+def _org_context(line):
+    """An adjacent line that plausibly names an employer, for title-only lines.
+
+    Conservative by design: no dates, no titles, no bullets, no headings, no
+    contact data, no ALL-CAPS name headers without an org suffix. Fail closed.
+    """
+    s2 = _strip_md(line)
+    if not s2 or len(s2) > 120 or re.match(r"^[•*\-–]\s", line.strip()):
+        return None
+    if _DATEISH.match(s2) or _EDU_WORDS.search(s2) or _TITLE_RE.search(s2):
+        return None
+    if _SECTION_HEADING.fullmatch(s2) or s2.endswith(":"):
+        return None
+    if "@" in s2 or re.search(r"\d{3,}", s2) or re.match(_GERUND + r"\b", s2, re.I):
+        return None
+    s2 = re.split(r"[|·]", s2)[0].split(",")[0].strip()
+    if not (1 <= len(s2.split()) <= 8 and re.search(r"[A-Za-z]", s2)):
+        return None
+    # An ALL-CAPS line with no org suffix is more likely a name header than an employer.
+    if s2.upper() == s2 and not _ORG_SUFFIX.search(s2):
+        return None
+    # A lone word without an org suffix ("Swim") is not an employer context.
+    if len(s2.split()) == 1 and not _ORG_SUFFIX.search(s2):
+        return None
+    return s2
+
+
+def _title_line_join(line, prev, nxt, name=""):
+    """A line that is exactly a job title gets its org from an adjacent org line
+    (markdown and PDF-flattened templates put org and dates on their own lines)."""
+    base = _strip_md(line)
+    if not _TITLE_FULL.match(base):
+        return None
+    org = _org_context(nxt) or _org_context(prev)
+    if org and name and org.casefold() == name.casefold():
+        org = None
+    if org:
+        return {"title": base, "org": org, "months": None}
+    return None
+
+
 def _experience_entry(line):
-    """Title and employer from 'Org, Title, dates', 'Title, Org, dates' or 'Title at Org'."""
-    line = line.strip()
+    """Title and employer from 'Org, Title, dates', 'Title, Org, dates', 'Title · Org' or 'Title at Org'."""
+    line = _strip_md(line)
     if re.match(r"^[•*\-–]\s", line) or len(line) > 220:
         return None
     head = re.split(r"[:：]", line, 1)[0]
     months = re.search(r"\((\d+)\s*months?\)", line)
     mval = int(months.group(1)) if months else None
     head = re.sub(r"\((?:[^()]*)\)", lambda m: " " if re.search(r"(?:19|20)\d\d|month|present", m.group(0), re.I) else m.group(0), head)
-    parts = [x.strip() for x in re.split(r",|\s[-\u2013]\s", head)]
+    dot_sep = "\u00b7" in head
+    parts = [x.strip() for x in re.split(r",|\s[-\u2013\u2014]\s|\u00b7|\|", head)]
     parts = [x for x in parts if x]
     # structured: some part that is essentially just a job title
     for i, part in enumerate(parts):
-        t = _TITLE_RE.fullmatch(re.sub(r"\s*\(.*?\)\s*", " ", part).strip())
-        if t:
+        base = re.sub(r"\s*\(.*?\)\s*", " ", part).strip()
+        if _TITLE_FULL.match(base):
             others = [x for j, x in enumerate(parts) if j != i]
+            dateish = [x for x in others if _DATEISH.match(x)]
+            rest = [x for x in others if not _DATEISH.match(x)]
+            # A "Title · skill, skill, skill" headline is not a job: with a dot
+            # separator, several short skill-like segments and no date, fail closed.
+            if dot_sep and not dateish and not any(_ORG_SUFFIX.search(x) for x in rest):
+                return None
             for cand in (others[i-1:i] if i >= 1 and len(others) >= i else []) + others:
                 cand = re.sub(r"\s*\(.*?\)\s*$", "", cand).strip()
-                if cand and not _DATEISH.match(cand) and not _TITLE_RE.fullmatch(cand) and not re.match(r"^(?:built|managed|wrote|led|worked)\b", cand, re.I):
-                    return {"title": _TITLE_RE.search(part).group(0).strip(), "org": cand, "months": mval}
+                if cand and not _DATEISH.match(cand) and not _TITLE_RE.fullmatch(cand) and not re.match(_GERUND + r"\b", cand, re.I):
+                    title = base if _TITLE_FULL.match(base) else _TITLE_RE.search(part).group(0).strip()
+                    return {"title": title, "org": cand, "months": mval}
             return None
     # prose: "<title> at <Org>"
     m = re.search(r"\b(" + _TITLES + r")\s+(?:at|with|for)\s+((?:[A-Z0-9][\w&.'-]*)(?:\s+(?:[A-Z0-9][\w&.'-]*|&|of|and))*?)(?=\s+(?:in|from|during|since|working|for|where|and)\b|\s*[,.(;]|\s+(?:19|20)\d\d|$)", line, re.I)
