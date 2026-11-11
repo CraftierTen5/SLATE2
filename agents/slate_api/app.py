@@ -29,6 +29,7 @@ from slate_core.resume import ParseError, extract_pdf_text, MAX_PDF_BYTES  # noq
 STATUS = {"resume_not_found": 404, "job_not_found": 404, "draft_not_found": 404,
           "resume_unreadable": 422, "invalid_decision": 422,
           "draft_not_approved": 403, "draft_rejected": 409, "unsupported_claim": 422}  # feature slices append their codes
+STATUS.setdefault("ai_not_configured", 503)  # appended, so sibling PRs editing the dict do not collide
 
 class ResumeIn(BaseModel):
     text: str = Field(max_length=200_000)  # plain text for now; PDF upload is an open question in the contract
@@ -93,6 +94,16 @@ def _mount(r: APIRouter, get_svc):
     @r.post("/tailor")
     def tailor(request: Request, b: TailorIn):
         with get_svc(request) as svc: return svc.tailor(b.resumeId, b.jobId)
+
+    @r.post("/tailor/ai")
+    def tailor_ai(request: Request, b: TailorIn):
+        # Opt-in AI drafting: off unless the server has a key AND the service supports it.
+        with get_svc(request) as svc:  # authenticate first
+            fn = getattr(svc, "tailor_ai", None)
+            if fn is None or not os.getenv("LLM_API_KEY"):
+                raise SlateError("ai_not_configured",
+                                 "AI tailoring is off on this server. Set LLM_API_KEY to enable it.")
+            return fn(b.resumeId, b.jobId)
 
     @r.get("/drafts")
     def list_drafts(request: Request):
