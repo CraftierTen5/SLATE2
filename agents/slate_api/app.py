@@ -37,7 +37,9 @@ STATUS.setdefault("invalid_source_preservation", 422)
 STATUS.setdefault("target_not_found", 404)
 STATUS.setdefault("demo_reset_disabled", 403)
 STATUS.setdefault("reset_not_confirmed", 422)
-STATUS.setdefault("ai_not_configured", 503)  # appended, so sibling PRs editing the dict do not collide
+STATUS.setdefault("ai_not_configured", 503)
+STATUS.setdefault("ai_explanation_unusable", 502)
+STATUS.setdefault("ai_consent_required", 403)  # appended, so sibling PRs editing the dict do not collide
 # --- Profile feature ---
 STATUS.setdefault("profile_not_confirmed", 422)
 STATUS.setdefault("invalid_profile", 422)
@@ -77,6 +79,10 @@ class TargetTailorIn(BaseModel):
     resumeId: str
     targetId: str
     acknowledgeRoleChange: StrictBool = False  # role-fit guardrail
+
+
+class ExplainIn(BaseModel):
+    consent: StrictBool = False
 
 
 class TailorIn(BaseModel):
@@ -203,6 +209,25 @@ def _mount(r: APIRouter, get_svc):
                 raise SlateError("ai_not_configured",
                                  "AI tailoring is off on this server. Set LLM_API_KEY to enable it.")
             return fn(b.resumeId, b.jobId, acknowledge_role_change=b.acknowledgeRoleChange)
+
+    @r.post("/resume/{rid}/explain")
+    def explain_resume(request: Request, rid: str, b: ExplainIn):
+        # Opt-in model explanation of the parse. Off unless a key (or injected client) exists.
+        with get_svc(request) as svc:  # authenticate first
+            # Resume text leaves this server for the model provider only on an explicit
+            # per-request yes. Nothing is stored; a missing/false flag never reaches the model.
+            if b.consent is not True:
+                raise SlateError("ai_consent_required",
+                                 "Sending your resume text to the AI provider needs your explicit yes on each request.")
+            fn = getattr(svc, "explain_resume", None)
+            if fn is None or not (os.getenv("LLM_API_KEY") or getattr(svc, "_llm_client", None)):
+                raise SlateError("ai_not_configured",
+                                 "AI explanation is off on this server. Set LLM_API_KEY to enable it.")
+            prep = svc.explain_prepare(rid)
+        # The provider call runs after the per-user lock is released, so a slow model
+        # cannot block this user's other requests. It touches no stored state.
+        from slate_core.ai_service import explain_finish, explain_generate
+        return explain_finish(prep, explain_generate(prep))
 
     @r.get("/drafts")
     def list_drafts(request: Request):

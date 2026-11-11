@@ -70,6 +70,12 @@ button:disabled{opacity:.35;cursor:not-allowed}
 .note{color:var(--mut);font-size:13px;margin:6px 0 8px}
 .msg{margin-top:8px;font-size:14px;overflow-wrap:anywhere}
 .upl{font-size:13px;color:var(--mut)}
+.pdfstatus{margin:10px 0;padding:10px 12px;border:1px solid var(--line);border-radius:10px;background:var(--soft);font-size:13px;color:var(--mut);line-height:1.5;overflow-wrap:anywhere}
+.aiconsent{display:flex;gap:8px;align-items:flex-start}
+.pdfstatus[hidden]{display:none}
+.pdfstatus .pl.typing::after{content:"";display:inline-block;width:6px;height:1em;margin-left:2px;vertical-align:text-bottom;background:currentColor;animation:pdfcaret 1s steps(1) infinite}
+.pdfstatus .pl.err{color:var(--bad)}
+@keyframes pdfcaret{50%{opacity:0}}
 input[type=file]{max-width:230px;font-size:12.5px}
 .bad{color:var(--bad)}
 .ok{color:var(--ok)}
@@ -252,8 +258,9 @@ html[data-theme=dark] #loginbox,html[data-theme=dark] #authPanel{background:rgba
 <p class="note">Saved versions belong to this signed-in user. Reopening keeps original source and your review separate; it does not reparse or approve a draft.</p>
 <div id="savedmsg" class="msg"></div></details>
 <div class="source-composer"><label for="resume" class="composer-label">Bring your experience.</label><p class="composer-hint">Paste your resume or attach a PDF. Start with the original, not a polished claim.</p><textarea id="resume" placeholder="Paste your resume here. Education, experience, projects, and skills..."></textarea>
-<div class="toolrow intakerow composer-actions"><span class="upl uplbox">Attach PDF <input type="file" id="pdffile" aria-label="Attach resume PDF" accept="application/pdf,.pdf"></span><button id="parse">Parse resume text <span aria-hidden="true">↗</span></button></div></div>
+<div class="toolrow intakerow composer-actions"><span class="upl uplbox">Attach PDF <input type="file" id="pdffile" aria-label="Attach resume PDF" accept="application/pdf,.pdf"></span><button id="parse">Parse resume text <span aria-hidden="true">↗</span></button></div><label class="note aiconsent"><input type="checkbox" id="aiconsent" onchange="if(!this.checked)abortExplain()"> Let an AI model (Groq) explain my resume after upload. This sends the extracted resume text to Groq. Off by default and cleared when you sign out or switch account.</label></div>
 <div class="response-surface"><div class="response-heading"><span aria-hidden="true">✦</span><h2>Source review</h2><span class="mode-label">Phrase extraction</span></div><p id="source-empty" class="empty-hint">Your source review appears here after parsing. Check what was recognized before you make a draft.</p>
+<div id="pdfstatus" class="pdfstatus" role="status" aria-live="polite" hidden></div>
 <div id="parsed" class="msg" aria-live="polite"></div>
 <details class="skill-disclosure"><summary>Review or add skill statements</summary><div id="skillreview" hidden>
 <h3>Review your skill statements</h3>
@@ -330,12 +337,12 @@ const PROFIELDS=["name","email","phone","location","linkedin","github","portfoli
 const esc=s=>String(s).replace(/[&<>"]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
 function token(){return sessionStorage.getItem("slate_token")||""}
 class StaleResponse extends Error {}
-async function api(method,path,body){
+async function api(method,path,body,signal){
   const auth=token(),generation=sourceGeneration,requestEpoch=sourceRequest,te=targetEpoch;
   const h={"content-type":"application/json"};
   if(auth) h["authorization"]="Bearer "+auth;
   let r;
-  try{r=await fetch("/v1"+path,{method,headers:h,body:body?JSON.stringify(body):undefined})}
+  try{r=await fetch("/v1"+path,{method,headers:h,body:body?JSON.stringify(body):undefined,signal})}
   catch(e){if(auth!==token()||generation!==sourceGeneration||requestEpoch!==sourceRequest||te!==targetEpoch)throw new StaleResponse();throw e}
   const j=await r.json();
   if(auth!==token()||generation!==sourceGeneration||requestEpoch!==sourceRequest||te!==targetEpoch) throw new StaleResponse();
@@ -414,7 +421,7 @@ const on=id=>$(id).classList.remove("off");
 function say(id,t,bad){$(id).className="msg "+(bad?"bad":"ok");$(id).textContent=t;if(!restoring)rememberSelection()}
 let sourceGeneration=0, sourceRequest=0, draftGeneration=0;
 function resetAccountState(){
-  selectionKey=null;restoring=false;sourceDirty=false;
+  abortExplain();$("aiconsent").checked=false;$("pdfstatus").hidden=true;$("pdfstatus").textContent="";selectionKey=null;restoring=false;sourceDirty=false;
   sourceRequest++;resetSourceResults();rid=null;targetEpoch++;tid=null;targetParent=null;targetDirty=false;
   ["targettitle","targetorg","targeturl","targettext","targetmsg"].forEach(id=>$(id).value!==undefined?$(id).value="":$(id).textContent="");
   $("savedtargets").innerHTML='<option value="">Choose a saved target</option>';
@@ -451,7 +458,7 @@ async function loadSavedVersions(){try{
 $("refreshsaved").onclick=loadSavedVersions;
 $("opensaved").onclick=async()=>{try{
   const selected=$("savedversions").value;if(!selected) throw new Error("Choose a saved version first.");
-  const request=++sourceRequest;
+  abortExplain();const request=++sourceRequest;
   const result=await api("GET","/resume/"+encodeURIComponent(selected));if(request!==sourceRequest)return;
   resetSourceResults();rid=result.resumeId;$("resume").value=result.sourceText;
   showParsed(result.parsed,"Reopened saved version: "+rid+". Text box shows the original upload, not added skill statements.");
@@ -468,7 +475,7 @@ async function loadSavedDrafts(){try{
 $("refreshdrafts").onclick=loadSavedDrafts;
 $("opendraft").onclick=async()=>{try{
   const selected=$("saveddrafts").value;if(!selected)throw new Error("Choose a saved draft first.");
-  const request=++sourceRequest;
+  abortExplain();const request=++sourceRequest;
   const d=await api("GET","/drafts/"+encodeURIComponent(selected));if(request!==sourceRequest)return;
   resetSourceResults();rid=d.resumeId;did=d.draftId;$("resume").value=d.source.sourceText;
   showParsed(d.source.parsed,"Saved draft source: "+rid+". Original upload, not added skill statements.");
@@ -543,7 +550,7 @@ async function loadJobs(){
 $("savereview").onclick=async()=>{try{
   if(!$("confirmreview").checked) throw new Error("Confirm your skill statements before saving.");
   const skills=$("reviewskills").value.split("\n").map(x=>x.trim()).filter(Boolean);
-  const request=++sourceRequest;
+  abortExplain();const request=++sourceRequest;
   const r=await api("POST","/resume/"+rid+"/skills/review",{skills,confirm:true});if(request!==sourceRequest)return;
   resetSourceResults();rid=r.resumeId;
   showParsed(r.parsed,"Saved user-reviewed version: "+r.resumeId);
@@ -559,7 +566,7 @@ async function loadProfile(){try{
 }catch(e){if(e instanceof StaleResponse)return;say("profilemsg",e.message,1)}}
 $("suggestprofile").onclick=async()=>{try{
   if(!rid)throw new Error("Parse or reopen a resume version first.");
-  const request=++sourceRequest;
+  abortExplain();const request=++sourceRequest;
   const s=await api("GET","/profile/suggestions?resumeId="+encodeURIComponent(rid));if(request!==sourceRequest)return;
   const sug=s.suggestions||{},filled=[];
   PROFIELDS.forEach(f=>{if(sug[f]&&!$("prof-"+f).value){$("prof-"+f).value=sug[f];filled.push(f)}});
@@ -569,28 +576,58 @@ $("suggestprofile").onclick=async()=>{try{
 $("saveprofile").onclick=async()=>{try{
   if(!$("confirmprofile").checked)throw new Error("Confirm your answers before saving.");
   const answers={};PROFIELDS.forEach(f=>{const v=$("prof-"+f).value.trim();if(v)answers[f]=v});
-  const request=++sourceRequest;
+  abortExplain();const request=++sourceRequest;
   const p=await api("POST","/profile",{answers,confirm:true});if(request!==sourceRequest)return;
   $("confirmprofile").checked=false;
   say("profilemsg","Saved confirmed profile for this signed-in user. Still unknown and never guessed: "+(p.unknownFields.join(", ")||"none")+". New drafts reuse these answers.");
 }catch(e){if(e instanceof StaleResponse)return;say("profilemsg",e.message,1)}};
 $("parse").onclick=async()=>{
- const request=++sourceRequest;$("parse").textContent="Parsing source...";$("parse").setAttribute("aria-busy","true");
+ abortExplain();const request=++sourceRequest;$("parse").textContent="Parsing source...";$("parse").setAttribute("aria-busy","true");
  try{
   const r=await api("POST","/resume",{text:$("resume").value});if(request!==sourceRequest)return; resetSourceResults();rid=r.resumeId;
   showParsed(r.parsed); await loadSavedVersions();await loadJobs();
 }catch(e){if(e instanceof StaleResponse)return;say("parsed",e.message,1)}finally{if(request===sourceRequest){$("parse").textContent="Parse resume text ↗";$("parse").removeAttribute("aria-busy")}}};
+let explainAbort=null;const EXPLAIN_WAIT_MS=8000;
+function abortExplain(){if(explainAbort){explainAbort.abort();explainAbort=null}}
+function pdfProgress(){const box=$("pdfstatus");box.hidden=false;box.textContent="";let queue=Promise.resolve(),instant=window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+  return{line(text,cls){queue=queue.then(()=>new Promise(done=>{const d=document.createElement("div");d.className="pl "+(cls||"");box.appendChild(d);if(instant){d.textContent=text;return done()}d.classList.add("typing");let i=0;const step=()=>{if(instant){d.textContent=text;d.classList.remove("typing");return done()}i+=2;d.textContent=text.slice(0,i);if(i>=text.length){d.classList.remove("typing");return done()}setTimeout(step,14)};step()}))},flush(){instant=true},hide(){instant=true;box.hidden=true;box.textContent=""}}}
+function kb(n){return n<1024?n+" B":(n/1024).toFixed(n<10240?1:0)+" KB"}
+async function runExplain(j,request,auth,prog){
+  if(!$("aiconsent").checked){prog.line("AI explanation is off. Tick the box above to have a model explain the result.");return}
+  const myAbort=new AbortController();explainAbort=myAbort;let timedOut=false;const timer=setTimeout(()=>{timedOut=true;myAbort.abort()},EXPLAIN_WAIT_MS);
+  prog.line("Parser results are shown below. Asking the AI model (Groq) for a short summary of this text. Unverified: it can be wrong and changes nothing in your resume.");
+  const live=()=>request===sourceRequest&&auth===token();
+  try{
+    const h={"content-type":"application/json"};if(auth)h.authorization="Bearer "+auth;
+    const r=await fetch("/v1/resume/"+encodeURIComponent(j.resumeId)+"/explain",{method:"POST",headers:h,body:JSON.stringify({consent:true}),signal:myAbort.signal});
+    const ex=await r.json();
+    if(!live())return;
+    if(!$("aiconsent").checked)throw Object.assign(new Error("cancelled"),{name:"AbortError"});
+    if(!r.ok){const e=new Error(ex.error?ex.error.message:"Request failed");e.code=ex.error&&ex.error.code;throw e}
+    if(ex.truncated)prog.line("Only the first "+ex.charsSent+" of "+ex.charsTotal+" characters were sent to the model.");
+    ex.items.forEach(it=>prog.line("AI (unverified): "+it.text+(it.sources.length?' (from your resume: '+it.sources.map(x=>'"'+x.line.slice(0,90)+(x.line.length>90?'...':'')+'"').join("; ")+')':"")));
+  }catch(e2){
+    if(!live())return;
+    const why=timedOut?"the model took longer than "+EXPLAIN_WAIT_MS/1000+" seconds, so I stopped waiting":e2.name==="AbortError"?"cancelled":e2.code==="ai_not_configured"?"no model is set up on this server":e2.message;
+    prog.line("AI explanation not available ("+why+"). Parser results above are unaffected.","err")
+  }finally{clearTimeout(timer);if(explainAbort===myAbort)explainAbort=null}
+}
 $("pdffile").onchange=async()=>{const f=$("pdffile").files[0];if(!f)return;
-  const request=++sourceRequest,auth=token(),generation=sourceGeneration,requestEpoch=sourceRequest;
+  abortExplain();const request=++sourceRequest,auth=token(),generation=sourceGeneration,requestEpoch=sourceRequest;
+  const prog=pdfProgress();prog.line("Sending "+f.name+" ("+kb(f.size)+") to Slate.");prog.line("Reading the PDF text and checking it for skills with fixed rules.");
   try{
   const fd=new FormData();fd.append("file",f);
   const ph={}; if(token()) ph["authorization"]="Bearer "+token();
   const res=await fetch("/v1/resume/pdf",{method:"POST",headers:ph,body:fd});
-  if(auth!==token()||generation!==sourceGeneration||requestEpoch!==sourceRequest||request!==sourceRequest)return;
-  if(res.status===401){await recoverSignIn();return}
+  if(auth!==token()||generation!==sourceGeneration||requestEpoch!==sourceRequest||request!==sourceRequest){prog.hide();return}
+  if(res.status===401){prog.hide();await recoverSignIn();return}
   const j=await res.json(); if(!res.ok) throw new Error(j.error?j.error.message:"Upload failed");
-  if(request!==sourceRequest)return; resetSourceResults();rid=j.resumeId; $("resume").value=j.sourceText; showParsed(j.parsed,"Uploaded PDF: "+f.name); await loadSavedVersions();await loadJobs();
-}catch(e){if(e instanceof StaleResponse||auth!==token()||generation!==sourceGeneration||request!==sourceRequest)return;say("parsed",e.message,1)}};
+  if(request!==sourceRequest){prog.hide();return} prog.line("Read "+j.sourceText.length+" characters. Found "+j.parsed.skills.length+" supported skill"+(j.parsed.skills.length===1?"":"s")+" with fixed rules.");
+  resetSourceResults();rid=j.resumeId; $("resume").value=j.sourceText; showParsed(j.parsed,"Uploaded PDF: "+f.name);
+  // Parser results are on screen now. The model summary, if allowed, is added to the box above them when it arrives.
+  runExplain(j,request,auth,prog);
+  await loadSavedVersions();await loadJobs();
+}catch(e){if(e instanceof StaleResponse||auth!==token()||generation!==sourceGeneration||request!==sourceRequest){prog.hide();return}prog.flush();prog.line("Could not finish: "+e.message,"err");say("parsed",e.message,1)}};
 function setStatus(s){$("status").textContent=s;$("status").className="tag "+s}
 let pendingRoleAck=null;
 function hideRoleAck(){["roleack","roleackt"].forEach(id=>$(id).hidden=true);pendingRoleAck=null}
