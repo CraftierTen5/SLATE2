@@ -290,6 +290,8 @@ html[data-theme=dark] #loginbox,html[data-theme=dark] #authPanel{background:rgba
 <section id="s2" class="off" data-route="comparisons"><h2>Sample job comparisons</h2>
 <p class="note">Demo score = share of a listing's skills found on the resume, over 5 sample listings. The 75% threshold from the deck is not implemented, so nothing here is claimed as a good match.</p>
 <p id="coverage" class="note">Only five analyst/tech fixtures are available. Retail and customer-service roles are not covered. Ranking these fixtures does not choose your career target; the percentages are not resume-quality or employability scores.</p>
+<div class="toolrow" id="jobsources"><button id="srcsample" class="sec">Sample fixtures</button><button id="srclive" class="sec">Live public boards</button></div>
+<p id="feedstatus" class="note"></p>
 <div id="jobs"></div>
 <div id="roleack" hidden><p class="note" id="roleackmsg"></p><label><input type="checkbox" id="roleackbox"> I understand this target differs from what my resume shows, and I want a factual draft anyway.</label><div><button id="roleackgo" class="sec">Create draft with original facts</button></div></div></section>
 
@@ -494,11 +496,26 @@ function showParsed(p,label){
   $("parsed").insertAdjacentHTML("beforeend",Object.entries(review).map(([key,value])=>'<details><summary>'+esc(key)+': '+esc(value.status.replaceAll("_"," "))+'</summary><p>'+esc(value.note)+'</p><ul>'+value.sourceLines.map(line=>'<li>'+esc(line)+'</li>').join("")+'</ul></details>').join(""));
 
 }
+let jobSource="sample";
+$("srcsample").onclick=()=>{jobSource="sample";loadJobs().catch(e=>say("feedstatus",e.message,1))};
+$("srclive").onclick=()=>{jobSource="live";loadJobs().catch(e=>say("feedstatus",e.message,1))};
 async function loadJobs(){
-  const requested=rid, generation=sourceGeneration;
-  const j=await api("GET","/jobs?resumeId="+encodeURIComponent(requested));
+  const requested=rid, generation=sourceGeneration, source=jobSource;
+  let j;
+  try{j=await api("GET","/jobs?resumeId="+encodeURIComponent(requested)+(source==="live"?"&source=live":""))}
+  catch(e){if(source!=="live")throw e;$("feedstatus").textContent="Live feed request failed: "+e.message+". No listings shown; sample fixtures are never mixed in as live.";$("jobs").innerHTML="";return}
   if(generation!==sourceGeneration||requested!==rid)return;
-  $("jobs").innerHTML=j.jobs.map(x=>`<div class="job"><div><b>${esc(x.title)}</b><br><small>${esc(x.company)} · ${esc(x.location)} · apply by ${esc(x.deadline)} · Demo fixture: ${esc(x.freshness||"unknown")} (not live-verified)</small><br><small>${esc(x.reason||"")}</small></div><div><span class="score">${Math.round(x.matchScore*100)}% skill overlap</span> <button data-j="${esc(x.jobId)}">Tailor</button></div></div>`).join("");
+  if(source!==jobSource)return;
+  if(source==="live"){
+    const st=j.feedStatus||{boards:[]},loaded=st.boards.filter(b=>b.count>0);
+    $("feedstatus").textContent="Live listings from public Lever/Greenhouse boards ("+(loaded.map(b=>b.company+" "+b.count).join(", ")||"none loaded")+"). Each board refetches at most hourly; apply links open the original employer posting. Skills are mentions extracted from the text, not the employer's structured list."+(st.anyStale?" Some boards are stale after a failed refresh: "+st.boards.filter(b=>b.error).map(b=>b.company).join(", ")+".":"")+(st.boards.every(b=>!b.count&&b.error)?" No board loaded; errors: "+st.boards.map(b=>b.company).join(", ")+".":"");
+    $("coverage").hidden=true;
+  }else{$("feedstatus").textContent="";$("coverage").hidden=false}
+  $("jobs").innerHTML=j.jobs.map(x=>{
+    const meta=source==="live"
+      ?esc(x.company)+" · "+esc(x.location)+" · no stated deadline · "+esc(x.freshness||"unknown")+" · "+esc(x.source==="lever"?"Lever":"Greenhouse")+" board"+(x.url?` · <a href="${esc(x.url)}" target="_blank" rel="noopener">Original posting</a>`:"")
+      :`${esc(x.company)} · ${esc(x.location)} · apply by ${esc(x.deadline)} · Demo fixture: ${esc(x.freshness||"unknown")} (not live-verified)`;
+    return `<div class="job"><div><b>${esc(x.title)}</b><br><small>${meta}</small><br><small>${esc(x.reason||"")}</small></div><div><span class="score">${Math.round(x.matchScore*100)}% skill overlap</span> <button data-j="${esc(x.jobId)}">Tailor</button></div></div>`}).join("");
   document.querySelectorAll("[data-j]").forEach(b=>b.onclick=()=>tailor(b.dataset.j));
   on("s2");on("s4");on("s5");
 }

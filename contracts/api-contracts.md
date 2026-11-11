@@ -282,3 +282,41 @@ draft entry point.
 - CLI: `tailor --acknowledge-role-change`. Web: a checkbox acknowledgment
   appears under the failed action; the draft is retried only after the box
   is ticked and the button clicked.
+
+## Live jobs feed (additive)
+
+Real listings come from public, keyless ATS board read endpoints only:
+Lever (`GET api.lever.co/v0/postings/{board}?mode=json`) and Greenhouse
+(`GET boards-api.greenhouse.io/v1/boards/{token}/jobs`). Both providers'
+official docs state reads need no authentication; the only documented rate
+limits cover application POSTs, which this product never makes. The seed
+board list in `agents/slate_core/jobs_feed.py` was verified reachable with
+India/remote-friendly listings on 2026-11-11.
+
+- `GET /v1/jobs?source=live` runs the same query/location/skill matching over
+  the live listings and adds `sourceLabel:"live_public_boards"`, per-listing
+  provenance (`source`, `sourceId`, `companyBoard`, `skillsKind`, `fetchedAt`)
+  and `feedStatus`. Omitting `source` returns the unchanged sample fixtures
+  with `sourceLabel:"sample_fixtures"`. Any other value fails with
+  `invalid_source`. Live and fixture listings are never mixed in one list.
+- `GET /v1/jobs/feed` returns the feed status: per-board company, listing
+  count, last successful fetch, stale flag and error text.
+- Refresh is bounded: each board refetches at most once per hour. A failed
+  refresh serves the last good listings labeled stale; a board that never
+  loaded contributes nothing and reports its error. The feed never falls
+  back to fixtures.
+- Fetches are plain GETs of fixed board URLs: no resume text, profile
+  answers or any user data is ever sent upstream (enforced in jobs_feed.py;
+  tested).
+- Boards publish posting dates, not application deadlines: live listings
+  carry `deadline: null`, freshness comes from the existing
+  observed-present curation, and no deadline is ever fabricated. Apply links
+  are the original employer posting URLs. `skills` on live listings are
+  mentions extracted from the posting text
+  (`skillsKind:"extracted_mentions_not_employer_structured"`).
+- Tailoring a live listing works while it sits in the current feed cache
+  (`_tailor` falls back to the cached listing); every guardrail (role-fit
+  acknowledgment, claim check, approval) applies unchanged.
+- The web Jobs section has an explicit source toggle: "Sample fixtures"
+  (default, labeled demo) vs "Live public boards" with a status line naming
+  the boards, counts, staleness and errors.

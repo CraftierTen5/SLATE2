@@ -52,7 +52,7 @@ def test_errors_use_contract_shape(c):
         assert set(resp.json()["error"]) == {"code", "message"}
 
 def test_empty_query_is_not_a_crash(c):
-    assert c.get("/v1/jobs", params={"query": "zzzz"}).json() == {"jobs": []}
+    assert c.get("/v1/jobs", params={"query": "zzzz"}).json() == {"jobs": [], "sourceLabel": "sample_fixtures"}
 
 def test_claim_check_flags_unbacked_claims():
     parsed = {"skills": ["python"]}

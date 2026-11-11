@@ -26,13 +26,19 @@ class SlateService:
     save(state: dict). State keys are resumes, texts and targets; the drafts and
     interview slices extend the load/save wiring for their own state.
     """
-    def __init__(self, store=None, llm_client=None):
+    def __init__(self, store=None, llm_client=None, feed=None):
         self._resumes = {}
         self._texts = {}
         self._targets = {}
         self._profile = None  # profile feature: confirmed answers, loaded below
         self.approvals = ApprovalStore()
         self._store = store
+        # Jobs feed (feature 3): live public-board listings, lazily refreshed.
+        # Injected in tests; the real one fetches only when live data is asked for.
+        if feed is None:
+            from .jobs_feed import default_feed
+            feed = default_feed()  # shared process-wide: public, non-user data
+        self._feed = feed
         # --- Interview feature ---
         from .interview import InterviewStore
         self.interviews = InterviewStore()
@@ -177,9 +183,23 @@ class SlateService:
         return {"resumeId": rid, "parsed": parsed, "invalidatedDraftIds": invalidated}
 
 
-    def jobs(self, query="", location="", resume_id=None) -> dict:
+    def jobs(self, query="", location="", resume_id=None, source=None) -> dict:
         skills = self._resume(resume_id)["skills"] if resume_id else []
-        return {"jobs": J.search_jobs(query, location, skills)}
+        if source in (None, "", "sample", "mock"):
+            return {"jobs": J.search_jobs(query, location, skills),
+                    "sourceLabel": "sample_fixtures"}
+        if source != "live":
+            raise SlateError("invalid_source",
+                             "Unknown jobs source. Use 'live' for the public-board feed, or omit it for sample fixtures.")
+        listings, status = self._feed.listings()
+        return {"jobs": J.search_jobs(query, location, skills, listings=listings),
+                "sourceLabel": "live_public_boards",
+                "feedStatus": status}
+
+    def jobs_feed_status(self) -> dict:
+        """Current feed status; refreshes boards that are due, never fabricates."""
+        _, status = self._feed.listings()
+        return status
 
     def create_target(self, title, organization, raw_text, source_url="", parent_target_id=None):
         import uuid
@@ -296,7 +316,9 @@ class SlateService:
 
     def _tailor(self, resume_id, job_id, acknowledge_role_change=False) -> dict:
         parsed = self._resume(resume_id)
-        job = J.get_job(job_id)
+        # Fixture listings first, then the feed cache: a live listing can be
+        # tailored while it is in the current cache (same claim/freshness rules).
+        job = J.get_job(job_id) or self._feed.lookup(job_id)
         if job is None:
             raise SlateError("job_not_found", "No job with that id.")
         # Role-fit guardrail: a recognized resume/target family mismatch needs an

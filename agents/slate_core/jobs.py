@@ -70,11 +70,12 @@ def freshness(j, now) -> str:
         return classify_freshness(listing, DEADLINE_PASSED, now)
     return classify_freshness(listing, PRESENT, now)
 
-def search_jobs(query: str = "", location: str = "", resume_skills=None, now=None) -> list:
+def search_jobs(query: str = "", location: str = "", resume_skills=None, now=None,
+                listings=None) -> list:
     now = now or datetime.now(timezone.utc)
     q, loc = (query or "").lower().strip(), normalize_location(location)
     out = []
-    for j in JOBS:
+    for j in (JOBS if listings is None else listings):
         if q and q not in j["title"].lower() and not any(q in _norm(s) for s in j["skills"]):
             continue
         # Both sides normalized: common city aliases (Bangalore/Bengaluru) match,
@@ -83,12 +84,18 @@ def search_jobs(query: str = "", location: str = "", resume_skills=None, now=Non
         if loc and loc not in location_candidates(j["location"]):
             continue
         matched, missing = skill_breakdown(resume_skills, j["skills"])
-        out.append({"jobId": j["jobId"], "title": j["title"], "company": j["company"],
-                    "location": j["location"], "matchScore": match_score(resume_skills or [], j["skills"]),
-                    "matchedSkills": matched, "missingSkills": missing,
-                    "reason": match_reason(matched, missing),
-                    "freshness": freshness(j, now),
-                    "deadline": j["deadline"], "url": j["url"]})
+        item = {"jobId": j["jobId"], "title": j["title"], "company": j["company"],
+                "location": j["location"], "matchScore": match_score(resume_skills or [], j["skills"]),
+                "matchedSkills": matched, "missingSkills": missing,
+                "reason": match_reason(matched, missing),
+                "freshness": freshness(j, now),
+                "deadline": j.get("deadline"), "url": j["url"]}
+        # Live-board listings carry their provenance through to the response;
+        # fixtures have no source fields and stay labeled by the caller.
+        for k in ("source", "sourceId", "companyBoard", "skillsKind", "fetchedAt"):
+            if j.get(k) is not None:
+                item[k] = j[k]
+        out.append(item)
     return sorted(out, key=lambda x: (-x["matchScore"], x["jobId"]))
 
 def get_job(job_id: str):

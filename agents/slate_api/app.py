@@ -164,8 +164,13 @@ def _mount(r: APIRouter, get_svc):
     # --- End profile feature ---
 
     @r.get("/jobs")
-    def jobs(request: Request, query: str = "", location: str = "", resumeId: Optional[str] = None):
-        with get_svc(request) as svc: return svc.jobs(query, location, resumeId)
+    def jobs(request: Request, query: str = "", location: str = "", resumeId: Optional[str] = None,
+             source: Optional[str] = None):
+        with get_svc(request) as svc: return svc.jobs(query, location, resumeId, source)
+
+    @r.get("/jobs/feed")
+    def jobs_feed(request: Request):
+        with get_svc(request) as svc: return svc.jobs_feed_status()
 
     @r.post("/targets")
     def create_target(request: Request, b: TargetIn):
