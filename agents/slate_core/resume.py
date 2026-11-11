@@ -404,12 +404,23 @@ def _qualification_uncertain(line):
 def qualification_lines(text):
     """Conservative literal lines eligible for degree/work extraction, not proof."""
     excluded_section = False
+    # Sections whose items name things (projects, references) stay excluded past
+    # blank lines: "Team lead, Clinic Billing System" is a project role, not a job.
+    ENTITY_LIST_SECTIONS = {"projects", "personal projects", "academic projects",
+                            "references", "referees", "interests", "hobbies", "interests/hobbies"}
     text = _without_template_tips(text)
     for l in text.splitlines():
         l = l.strip()
+        if not l:
+            # A blank line ends an excluded prose/list section ("Skills:" then a
+            # blank then an experience line must not hide that line); blanks are
+            # never yielded.
+            if excluded_section not in ENTITY_LIST_SECTIONS:
+                excluded_section = False
+            continue
         label = l.casefold().rstrip(':：')
         if label.startswith("user-provided skill statements"):
-            excluded_section = True
+            excluded_section = "user-provided skill statements"
             continue
         # Explicit non-history sections can contain degree words and job titles
         # without describing the candidate's qualifications or employment.
@@ -417,7 +428,7 @@ def qualification_lines(text):
         if section_label in {"career objective", "objective", "career goals", "learning goals", "job requirements", "required qualifications", "example", "example experience", "instructions", "tips",
                              "skills", "key skills", "technical skills", "competencies", "core competencies", "compétences", "habilidades", "fähigkeiten", "कौशल", "技能",
                              "projects", "personal projects", "academic projects", "references", "referees", "interests", "hobbies", "interests/hobbies"}:
-            excluded_section = True
+            excluded_section = section_label
             continue
         if label in {"education", "qualifications", "academic qualifications", "academic details", "education and qualifications", "internship", "internships", "work history", "professional background", "academic background", "experience", "work experience", "employment", "employment history", "professional experience", "formation", "educación", "ausbildung", "शिक्षा", "教育", "expérience", "experiencia", "berufserfahrung", "अनुभव", "工作经历"}:
             excluded_section = False
