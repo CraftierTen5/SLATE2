@@ -38,8 +38,12 @@ class AISlateService(SlateService):
         # (used by AI tailoring) and must never be sent to the Gemini endpoint.
         import os
         if llm_client is not None or os.getenv("GEMINI_API_KEY"):
-            from .interview import GeminiInterviewCoach
-            self.interviews.coach = GeminiInterviewCoach(llm_client)
+            try:
+                from .interview import GeminiInterviewCoach
+            except ImportError:
+                GeminiInterviewCoach = None  # interview slice lands separately
+            if GeminiInterviewCoach is not None:
+                self.interviews.coach = GeminiInterviewCoach(llm_client)
 
     def _blocks(self, resume_id, job):
         return source_blocks(self._texts[resume_id], job)
