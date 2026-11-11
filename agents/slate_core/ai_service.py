@@ -32,18 +32,8 @@ from .tailor import check_claims
 
 class AISlateService(SlateService):
     def __init__(self, store=None, llm_client=None):
-        super().__init__(store)
+        super().__init__(store, llm_client=llm_client)
         self._llm_client = llm_client  # tests inject MockLLM here
-        # Interview coaching uses Gemini only. LLM_API_KEY may belong to Groq
-        # (used by AI tailoring) and must never be sent to the Gemini endpoint.
-        import os
-        if llm_client is not None or os.getenv("GEMINI_API_KEY"):
-            try:
-                from .interview import GeminiInterviewCoach
-            except ImportError:
-                GeminiInterviewCoach = None  # interview slice lands separately
-            if GeminiInterviewCoach is not None:
-                self.interviews.coach = GeminiInterviewCoach(llm_client)
 
     def _blocks(self, resume_id, job):
         return source_blocks(self._texts[resume_id], job)

@@ -3,6 +3,7 @@
 Built up feature by feature: shared error type and store plumbing, plus the
 resume intake / skill review feature. Later slices add their own sections.
 """
+import os  # interview feature: GEMINI_API_KEY check for the coach hook
 from . import jobs as J
 from .resume import parse_resume, ParseError
 from .tailor import build_draft
@@ -25,23 +26,41 @@ class SlateService:
     save(state: dict). State keys are resumes, texts and targets; the drafts and
     interview slices extend the load/save wiring for their own state.
     """
-    def __init__(self, store=None):
+    def __init__(self, store=None, llm_client=None):
         self._resumes = {}
         self._texts = {}
         self._targets = {}
         self.approvals = ApprovalStore()
         self._store = store
+        # --- Interview feature ---
+        from .interview import InterviewStore
+        self.interviews = InterviewStore()
+        # Gemini interview coaching only: attach when a client is injected
+        # (tests) or GEMINI_API_KEY is set. LLM_API_KEY (Groq tailoring) must
+        # never enable the interview coach. This base hook replaces the
+        # temporary guarded attachment in ai_service.py.
+        if llm_client is not None or os.getenv("GEMINI_API_KEY"):
+            from .interview import GeminiInterviewCoach
+            self.interviews.coach = GeminiInterviewCoach(llm_client)
+        # --- End interview feature ---
         if store is not None:
             st = store.load()
             if st:
                 self._resumes, self._texts = st["resumes"], st["texts"]
                 self._targets = st.get("targets", {})
                 self.approvals._drafts, self.approvals._n = st["drafts"], st["draftN"]
+                # --- Interview feature ---
+                self.interviews._sessions = st.get("sessions", {})
+                self.interviews._n = st.get("sessionN", 0)
+                # --- End interview feature ---
 
     def _persist(self):
         if self._store is not None:
             self._store.save({"resumes": self._resumes, "texts": self._texts,
                               "drafts": self.approvals._drafts, "draftN": self.approvals._n,
+                              # --- Interview feature ---
+                              "sessions": self.interviews._sessions, "sessionN": self.interviews._n,
+                              # --- End interview feature ---
                               "targets": self._targets})
 
     def _resume(self, rid):
@@ -323,3 +342,83 @@ class SlateService:
         r = self._decide(*a, **k)
         self._persist()
         return r
+
+    # --- Interview feature ---
+    def _interview_resume_context(self, resume_id):
+        if not resume_id:
+            return {}
+        parsed = self._resume(resume_id)
+        # Send only bounded structured facts, never the original resume text.
+        education = [
+            {"degree": str(item.get("degree", ""))[:120],
+             "institute": str(item.get("institute", ""))[:160],
+             "year": item.get("year")}
+            for item in parsed.get("education", []) if isinstance(item, dict)
+        ][:12]
+        experience = [
+            {"title": str(item.get("title", ""))[:120],
+             "org": str(item.get("org", ""))[:160],
+             "months": item.get("months")}
+            for item in parsed.get("experience", []) if isinstance(item, dict)
+        ][:20]
+        return {
+            "name": str(parsed.get("name", ""))[:120],
+            "skills": [str(skill)[:80] for skill in parsed.get("skills", [])[:80]],
+            "education": education,
+            "experience": experience,
+        }
+
+    def _start_interview(self, target_role, mode="text", resume_id=None) -> dict:
+        if mode not in ("text", "voice"):
+            raise SlateError("mode_unsupported", "Interview mode must be 'text' or 'voice'.")
+        if not isinstance(target_role, str) or not target_role.strip():
+            raise SlateError("role_unknown", "Enter a target role before starting the interview.")
+        context = self._interview_resume_context(resume_id)
+        return self.interviews.start(target_role.strip()[:120],
+                                     self.interviews.past_feedback(target_role),
+                                     resume_context=context, mode=mode)
+
+    def _answer_interview(self, session_id, text, delivery_metrics=None) -> dict:
+        try:
+            return self.interviews.answer(session_id, text, delivery_metrics)
+        except KeyError:
+            raise SlateError("session_not_found", "No interview session with that id.")
+        except ValueError as e:
+            if str(e) == "answer_empty":
+                raise SlateError("answer_empty", "Enter or dictate an answer before submitting.")
+            if str(e) in ("interview_complete", "interview_ended"):
+                raise SlateError("interview_ended", "This interview has ended.")
+            raise
+
+    def _end_interview(self, session_id) -> dict:
+        try:
+            return self.interviews.end(session_id)
+        except KeyError:
+            raise SlateError("session_not_found", "No interview session with that id.")
+
+    def _interview_feedback(self, session_id) -> dict:
+        try:
+            return self.interviews.feedback(session_id)
+        except KeyError:
+            raise SlateError("session_not_found", "No interview session with that id.")
+
+    def start_interview(self, *a, **k):
+        r = self._start_interview(*a, **k)
+        self._persist()
+        return r
+
+    def answer_interview(self, *a, **k):
+        r = self._answer_interview(*a, **k)
+        self._persist()
+        return r
+
+    def interview_feedback(self, *a, **k):
+        r = self._interview_feedback(*a, **k)
+        self._persist()
+        return r
+
+    def end_interview(self, *a, **k):
+        r = self._end_interview(*a, **k)
+        self._persist()
+        return r
+    # --- End interview feature ---
