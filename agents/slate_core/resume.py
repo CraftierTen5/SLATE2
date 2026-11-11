@@ -637,6 +637,11 @@ def extract_pdf_text(data: bytes) -> str:
         raise
     except Exception:
         raise ParseError("Could not read that file as a PDF.")
+    # pypdf emits lone '\r' line endings inside tabular layouts. The extracted
+    # text is stored as the resume source, and the review editor's textarea
+    # normalizes line endings on read - so CR bytes here would make the saved
+    # version permanently 'dirty' and block approve/export. Store LF only.
+    text = text.replace("\r\n", "\n").replace("\r", "\n")
     if len(text.strip()) < 20:
         raise ParseError("No selectable text found in that PDF (a scanned image will not work).")
     return text

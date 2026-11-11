@@ -76,3 +76,15 @@ def test_pdf_response_preserves_original_source_text_for_current_editor(client):
     assert data['sourceTextKind']=='original_uploaded_text_not_user_addendum'
     assert data['sourceText']==extract_pdf_text(make_pdf(LINES))
     assert 'Asha Verma' in data['sourceText']
+
+
+def test_extract_pdf_text_normalizes_cr_line_endings():
+    # Audit F14 (10-sample internet audit, 2026-11-11): pypdf emits lone '\r'
+    # line endings inside tabular layouts. Extracted text is stored as the
+    # resume source; the review editor's textarea normalizes line endings on
+    # read, so CR bytes made the saved version permanently 'dirty' and blocked
+    # approve/export for real PDF uploads. Stored text must be LF-only.
+    text = extract_pdf_text(make_pdf(["Asha Verma\rSkills: Python, Git, Excel",
+                                      "B.Tech Computer Science, IIITM Gwalior, 2027"]))
+    assert "\r" not in text
+    assert "Asha Verma\nSkills: Python, Git, Excel" in text
