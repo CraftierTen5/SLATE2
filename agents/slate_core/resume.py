@@ -132,9 +132,10 @@ def parse_resume(text: str) -> dict:
         exp = _experience_entry(l) if l != lines[0] else None
         if exp is None and l != lines[0]:
             prev = qlines[qi - 1] if qi > 0 and qlines[qi - 1] != lines[0] else ""
+            prev2 = qlines[qi - 2] if qi > 1 and qlines[qi - 2] != lines[0] else ""
             exp = _title_line_join(l, prev,
                                    qlines[qi + 1] if qi + 1 < len(qlines) else "",
-                                   name=name)
+                                   name=name, prev2=prev2)
         if exp and not _EDU_WORDS.search(l):
             experience.append(exp)
     return {"name": name, "nameEvidence": name_evidence, "skills": skills, "education": education, "experience": experience,
@@ -147,7 +148,7 @@ _EDU_WORDS = re.compile(r"(?<![a-z])(b\.?tech|m\.?tech|bca|mca|b\.?sc|m\.?sc|bac
 _DATEISH = re.compile(r"^(?:\(?(?:19|20)\d\d(?:\s*[-\u2013to]+\s*(?:(?:19|20)\d\d|present|ongoing))?\)?|cgpa.*|.*cgpa|gpa.*|\d+(?:\.\d+)?\s*(?:/\s*10)?%?)$", re.I)
 _TITLES = (r"internship|intern|trainee|developer|analyst|engineer|executive|manager|assistant|associate|designer|consultant|"
            r"officer|teacher|coordinator|specialist|administrator|technician|accountant|recruiter|lead|"
-           r"representative|scientist|architect|tutor|coach")
+           r"representative|scientist|architect|tutor|coach|volunteer")
 _TITLE_RE = re.compile(r"\b(?:[A-Za-z]+\s){0,3}?(?:" + _TITLES + r")\b", re.I)
 _TITLE_SUFFIX = r"(?:\s+(?:I{1,3}|IV|V|VI{0,3}))?"
 _TITLE_FULL = re.compile(r"(?:[A-Za-z]+\s){0,3}?(?:" + _TITLES + r")" + _TITLE_SUFFIX + r"$", re.I)
@@ -279,25 +280,39 @@ def _org_context(line):
         return None
     if "@" in s2 or re.search(r"\d{3,}", s2) or re.match(_GERUND + r"\b", s2, re.I):
         return None
+    # 'YMCA, Pomona, CA' is an org plus trailing location, not a name header.
+    has_location = bool(re.search(r",\s*[A-Za-z. ]+,\s*[A-Z]{2}\s*$", _strip_md(line)))
     s2 = re.split(r"[|·]", s2)[0].split(",")[0].strip()
     if not (1 <= len(s2.split()) <= 8 and re.search(r"[A-Za-z]", s2)):
         return None
     # An ALL-CAPS line with no org suffix is more likely a name header than an employer.
-    if s2.upper() == s2 and not _ORG_SUFFIX.search(s2):
+    if s2.upper() == s2 and not _ORG_SUFFIX.search(s2) and not has_location:
         return None
     # A lone word without an org suffix ("Swim") is not an employer context.
-    if len(s2.split()) == 1 and not _ORG_SUFFIX.search(s2):
+    if len(s2.split()) == 1 and not _ORG_SUFFIX.search(s2) and not has_location:
         return None
     return s2
 
 
-def _title_line_join(line, prev, nxt, name=""):
+_MONTHDATE_LINE = re.compile(
+    r"^(?:jan(?:uary)?|feb(?:ruary)?|mar(?:ch)?|apr(?:il)?|may|jun(?:e)?|jul(?:y)?|"
+    r"aug(?:ust)?|sep(?:t|tember)?|oct(?:ober)?|nov(?:ember)?|dec(?:ember)?|"
+    r"spring|summer|fall|autumn|winter)\b.*(?:19|20)\d\d", re.I)
+
+
+def _title_line_join(line, prev, nxt, name="", prev2=""):
     """A line that is exactly a job title gets its org from an adjacent org line
-    (markdown and PDF-flattened templates put org and dates on their own lines)."""
+    (markdown and PDF-flattened templates put org and dates on their own lines).
+    Some templates order org / dates / title, so when the previous line is only
+    a date range, the line before it may be the employer."""
     base = _strip_md(line)
     if not _TITLE_FULL.match(base):
         return None
     org = _org_context(nxt) or _org_context(prev)
+    if not org and prev2:
+        p = _strip_md(prev)
+        if _is_date_line(prev) or _MONTHDATE_LINE.match(p):
+            org = _org_context(prev2)
     if org and name and org.casefold() == name.casefold():
         org = None
     if org:
@@ -531,7 +546,7 @@ def qualification_lines(text):
                              "projects", "personal projects", "academic projects", "references", "referees", "interests", "hobbies", "interests/hobbies"}:
             excluded_section = section_label
             continue
-        if label in {"education", "qualifications", "academic qualifications", "academic details", "education and qualifications", "internship", "internships", "work history", "professional background", "academic background", "experience", "work experience", "employment", "employment history", "professional experience", "formation", "educación", "ausbildung", "शिक्षा", "教育", "expérience", "experiencia", "berufserfahrung", "अनुभव", "工作经历"}:
+        if label in {"education", "qualifications", "academic qualifications", "academic details", "education and qualifications", "internship", "internships", "work history", "professional background", "academic background", "experience", "work experience", "employment", "employment history", "professional experience", "volunteer experience", "volunteer work", "formation", "educación", "ausbildung", "शिक्षा", "教育", "expérience", "experiencia", "berufserfahrung", "अनुभव", "工作经历"}:
             excluded_section = False
             continue
         # A literal degree/job-title mention is not necessarily a qualification.

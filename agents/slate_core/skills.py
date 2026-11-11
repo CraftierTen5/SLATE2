@@ -62,7 +62,7 @@ _SKILL_HEADING = re.compile(
 _SECTION_HEADING = re.compile(
     r"^(?:education|experience|work experience|employment|projects|qualifications|"
     r"certifications|interests(?:/hobbies)?|referees|references|availability|"
-    r"career objective|summary|professional summary|academic qualifications|academic details|internship|internships|work history|professional experience|professional background|leadership roles|formation|expérience|educación|"
+    r"career objective|summary|professional summary|academic qualifications|academic details|internship|internships|work history|professional experience|professional background|volunteer experience|volunteer work|leadership roles|formation|expérience|educación|"
     r"positions? of responsibility|achievements?|awards?|honou?rs(?: ?/ ?awards)?|languages?|"
     r"(?:professional )?memberships?|hobbies|extracurricular(?: activities)?|declaration|"
     r"experiencia|ausbildung|berufserfahrung|教育|工作经历|शिक्षा|अनुभव)\s*[:：]?\s*$", re.I)
