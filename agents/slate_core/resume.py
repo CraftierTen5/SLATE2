@@ -50,6 +50,9 @@ _TITLES = (r"internship|intern|trainee|developer|analyst|engineer|executive|mana
            r"officer|teacher|coordinator|specialist|administrator|technician|accountant|recruiter|lead|"
            r"representative|scientist|architect|tutor|coach")
 _TITLE_RE = re.compile(r"\b(?:[A-Za-z]+\s){0,3}?(?:" + _TITLES + r")\b", re.I)
+_SUBJECT = re.compile(
+    r"^(?:[A-Za-z&]+[\s,]+){0,3}(?:science|arts|applications|studies|engineering|technology|"
+    r"mathematics|statistics|commerce|humanities|administration|education|law|medicine)s?$", re.I)
 
 
 def _education_entry(part):
@@ -91,15 +94,34 @@ def _education_entry(part):
     if y:
         years = re.findall(r"(?:19|20)\d\d", part)
         year = int(years[-1])
-    inst = ""
-    segments = [x.strip() for x in re.split(r",|\s[-\u2013]\s", part)[1:]]
+    # "Bachelor of Science in Computer Science" must not truncate to "Bachelor":
+    # extend bachelor/master with their literal "of ... [in ...]" subject text.
+    degree = m.group(1).replace("..", ".")
+    if re.fullmatch(r"bachelor|master", degree, re.I):
+        ext = re.match(r"\s+of\s+[A-Za-z][\w&.\' ]*?(?:\s+in\s+[A-Za-z][\w&.\' ]*?)?(?=\s*[,;|\u00b7]|\s+[-\u2013\u2014]\s|\s*$)", part[m.end():])
+        if ext:
+            degree += " " + ext.group(0).strip()
+    inst, subject = "", None
+    segments = [x.strip() for x in re.split(r",|\s[-\u2013]\s|\u00b7", part)[1:]]
     for seg in segments:
         seg = seg.strip(". ")
-        if seg and not _DATEISH.match(seg) and not _DEGREE.fullmatch(seg) and len(seg) <= 80:
-            inst = seg
-            break
+        if not seg or len(seg) > 80 or _DATEISH.match(seg) or _DEGREE.fullmatch(seg):
+            continue
+        # Score text ("3.8 GPA", "CGPA 8.6/10 (till 7th semester)") is never an
+        # institute; the labeled value already lives in entry["gpa"].
+        if re.search(r"\b(?:cgpa|gpa)\b", seg, re.I):
+            continue
+        # A short field-of-study segment ("Computer Applications", "Business
+        # Administration") is a subject, not an institute; keep it as written.
+        if subject is None and _SUBJECT.fullmatch(seg):
+            subject = seg
+            continue
+        inst = seg
+        break
     # Source casing is preserved as written (only the '..' artifact is normalized).
-    entry = {"degree": m.group(1).replace("..", "."), "institute": inst, "year": year}
+    entry = {"degree": degree, "institute": inst, "year": year}
+    if subject:
+        entry["subject"] = subject
     if gpa:
         entry["gpa"] = gpa
     return entry

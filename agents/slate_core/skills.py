@@ -140,7 +140,7 @@ _UNCERTAIN = re.compile(
     r"aspir(?:e|es|ing)|interested in|hop(?:e|es|ing) to|instruction)\b", re.I)
 # Degree tokens; shared with resume.py, which imports it from here.
 _DEGREE = re.compile(
-    r"(?<![a-z])(b\.?\s?tech|m\.?\s?tech|b\.?e\.?|m\.?e\.?|bca|mca|b\.?sc\.?|m\.?sc\.?|b\.?com\.?|m\.?com\.?|"
+    r"(?<![a-z])(b\.?\s?tech|m\.?\s?tech|b\.?e\.?|m\.?e\.?|b\.?s\.?|m\.?s\.?|bca|mca|b\.?sc\.?|m\.?sc\.?|b\.?com\.?|m\.?com\.?|"
     r"b\.?a\.?|m\.?a\.?|b\.?ed\.?|m\.?ed\.?|b\.?des\.?|m\.?des\.?|bba|mba|pgdm|b\.?arch|ph\.?d|diploma|bachelor|master)(?![a-z])", re.I)
 _STUDY_LINE = re.compile(
     r"\b(?:studied|studying|study of|read for|majored in|speciali[sz]ed in|pursued|pursuing)\b", re.I)
