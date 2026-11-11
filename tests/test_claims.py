@@ -127,3 +127,22 @@ class TargetReferenceMentions(unittest.TestCase):
                        "I am applying for the Machine Learning Engineer role and I know machine learning.",
                        allowed_mentions=["Machine Learning Engineer", "Northwind AI"])
         self.assertTrue(any("machine learning" in v for v in bad))
+
+    def test_appended_claim_on_target_role_line_still_rejected(self):
+        did = self.s.tailor(self.rid, "job_004")["draftId"]
+        with self.assertRaises(SlateError) as c:
+            self.s.edit_draft(did, tailoredResume="Kavya Menon\nTarget role: Machine Learning Engineer at Northwind AI and I have machine learning experience")
+        self.assertEqual(c.exception.code, "unsupported_claim")
+        self.assertIn("machine learning", c.exception.message)
+
+    def test_appended_claim_in_greeting_line_still_rejected(self):
+        did = self.s.tailor(self.rid, "job_004")["draftId"]
+        with self.assertRaises(SlateError) as c:
+            self.s.edit_draft(did, coverNote="Hello Northwind AI team, I bring deep machine learning expertise.")
+        self.assertEqual(c.exception.code, "unsupported_claim")
+
+    def test_repeated_title_outside_reference_phrase_still_rejected(self):
+        did = self.s.tailor(self.rid, "job_004")["draftId"]
+        with self.assertRaises(SlateError) as c:
+            self.s.edit_draft(did, coverNote="I am applying for the Machine Learning Engineer role. As a Machine Learning Engineer I led teams.")
+        self.assertEqual(c.exception.code, "unsupported_claim")

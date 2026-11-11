@@ -24,8 +24,9 @@ def validate(parsed: dict, resume_text: str, *texts: str, allowed_mentions=()) -
 
     allowed_mentions: exact strings the generator legitimately quotes - the
     target's own title and company. Only verifiable REFERENCE contexts are
-    exempt: a line starting "Target role:", the phrase "applying for the
-    <title> role", and the greeting "Hello <company> team". The same words in
+    exempt: the stored exact title/company on a "Target role:" line, the phrase "applying for the
+    <title> role", and the greeting "Hello <company> team". Anything else on
+    those lines stays checked. The same words in
     any other context stay subject to every check, so a first-person
     assertion containing the exact title ("Previously worked as a Machine
     Learning Engineer") is still caught.
@@ -34,8 +35,15 @@ def validate(parsed: dict, resume_text: str, *texts: str, allowed_mentions=()) -
     body = "\n".join(t for t in texts if t)
     mentions = [m.strip() for m in allowed_mentions if isinstance(m, str) and m.strip()]
     if mentions:
-        body = "\n".join("" if line.lstrip().lower().startswith("target role:") else line
-                          for line in body.split("\n"))
+        def _strip_refs(line):
+            # A 'Target role:' line is a reference, but only the stored exact
+            # title/company are exempt - anything else appended to the line
+            # remains fully checked.
+            if line.lstrip().lower().startswith("target role:"):
+                for m in mentions:
+                    line = re.sub(r"(?<!\w)" + re.escape(m) + r"(?!\w)", " ", line, flags=re.I)
+            return line
+        body = "\n".join(_strip_refs(line) for line in body.split("\n"))
         for m in mentions:
             body = re.sub(r"(?<!\w)applying for the " + re.escape(m) + r" role(?!\w)", " ", body, flags=re.I)
             body = re.sub(r"(?<!\w)hello " + re.escape(m) + r" team(?!\w)", " ", body, flags=re.I)
