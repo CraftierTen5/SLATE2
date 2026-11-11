@@ -284,12 +284,14 @@ html[data-theme=dark] #loginbox,html[data-theme=dark] #authPanel{background:rgba
 <label for="targettext" class="sr-only">Pasted job description</label><textarea id="targettext" maxlength="20000" placeholder="Paste the requirements here. Keep private details out unless you intend to store them."></textarea>
 <div class="toolrow"><button id="savetarget">Save new target version</button><button id="drafttarget" class="sec">Create source-preserving draft</button></div>
 </div><div id="targetmsg" class="msg" role="status"></div>
+<div id="roleackt" hidden><p class="note" id="roleacktmsg"></p><label><input type="checkbox" id="roleacktbox"> I understand this target differs from what my resume shows, and I want a factual draft anyway.</label><div><button id="roleacktgo" class="sec">Create draft with original facts</button></div></div>
 <p class="note">This mode keeps the original resume text, including school, work and trade details the parser may miss. It does not rewrite, format a full CV, infer a qualification, or add job requirements as applicant facts. Review skills on the Resume page. Original-source changes require a new parsed resume version; only notes after the preserved block and the cover note can be edited here.</p></section>
 
 <section id="s2" class="off" data-route="comparisons"><h2>Sample job comparisons</h2>
 <p class="note">Demo score = share of a listing's skills found on the resume, over 5 sample listings. The 75% threshold from the deck is not implemented, so nothing here is claimed as a good match.</p>
 <p id="coverage" class="note">Only five analyst/tech fixtures are available. Retail and customer-service roles are not covered. Ranking these fixtures does not choose your career target; the percentages are not resume-quality or employability scores.</p>
-<div id="jobs"></div></section>
+<div id="jobs"></div>
+<div id="roleack" hidden><p class="note" id="roleackmsg"></p><label><input type="checkbox" id="roleackbox"> I understand this target differs from what my resume shows, and I want a factual draft anyway.</label><div><button id="roleackgo" class="sec">Create draft with original facts</button></div></div></section>
 
 <section id="s3" class="off artifact-canvas" data-route="draft"><h2>Draft <span id="status" class="tag">draft</span></h2>
 <details class="saved-drawer" id="draft-library"><summary>Open a saved draft</summary><div class="toolrow"><button id="refreshdrafts" class="sec">Load my saved drafts</button>
@@ -336,7 +338,7 @@ async function api(method,path,body){
   const j=await r.json();
   if(auth!==token()||generation!==sourceGeneration||requestEpoch!==sourceRequest||te!==targetEpoch) throw new StaleResponse();
   if(r.status===401){await recoverSignIn();throw new StaleResponse()}
-  if(!r.ok) throw new Error(j.error?j.error.message:"Request failed"); return j;
+  if(!r.ok){const err=new Error(j.error?j.error.message:"Request failed");err.code=j.error&&j.error.code;throw err} return j;
 }
 function showLogin(note){
   $("loginbox").classList.remove("signed");
@@ -423,7 +425,7 @@ function resetAccountState(){
   ["draftlistmsg","savedmsg","reviewmsg","dmsg","profilemsg"].forEach(id=>$(id).textContent="");updateContextBar();
 }
 function resetSourceResults(){
-  $("reviewmsg").textContent="";
+  $("reviewmsg").textContent="";hideRoleAck();
   sourceGeneration++;draftGeneration++;did=null;sid=null;savedRes="";savedNote="";
   $("dres").value="";$("dnote").value="";setStatus("draft");refresh();
   $("jobs").innerHTML="";$("roadlist").innerHTML="";$("iv").innerHTML="";
@@ -475,12 +477,13 @@ $("opendraft").onclick=async()=>{try{
 }catch(e){if(e instanceof StaleResponse)return;say("draftlistmsg",e.message,1)}};
 function clearTargetDraft(){draftGeneration++;did=null;savedRes="";savedNote="";$("dres").value="";$("dnote").value="";setStatus("draft");refresh();$("s3").classList.add("off")}
 function displayTarget(t){targetEpoch++;tid=t?.targetId||null;targetParent=tid;targetDirty=false;$("targettitle").value=t?.title||"";$("targetorg").value=t?.company||"";$("targeturl").value=t?.sourceUrl||"";$("targettext").value=t?.rawText||"";say("targetmsg",t?"Selected saved target: "+t.title+". User-pasted, not employer-verified.":"No pasted target bound to this fixture draft.")}
-["targettitle","targetorg","targeturl","targettext"].forEach(id=>$(id).oninput=()=>{targetEpoch++;sourceRequest++;tid=null;targetDirty=true;clearTargetDraft();say("targetmsg","Target changed. Save a new target version before making a draft; old approval does not apply to this text.")});
+["targettitle","targetorg","targeturl","targettext"].forEach(id=>$(id).oninput=()=>{targetEpoch++;sourceRequest++;tid=null;targetDirty=true;clearTargetDraft();hideRoleAck();say("targetmsg","Target changed. Save a new target version before making a draft; old approval does not apply to this text.")});
 async function loadTargets(){const epoch=targetEpoch;try{if(!token())return;const r=await api("GET","/targets");if(epoch!==targetEpoch)return;const selectedTarget=$("savedtargets").value;$("savedtargets").innerHTML='<option value="">Choose a saved target</option>'+r.targets.map(t=>'<option value="'+esc(t.targetId)+'">'+esc(t.title)+(t.company?' / '+esc(t.company):'')+'</option>').join("");if(r.targets.some(t=>t.targetId===selectedTarget))$("savedtargets").value=selectedTarget}catch(e){if(e instanceof StaleResponse||epoch!==targetEpoch)return;say("targetmsg",e.message,1)}}
 $("refreshtargets").onclick=loadTargets;
 $("opentarget").onclick=async()=>{const epoch=++targetEpoch;try{const selected=$("savedtargets").value;if(!selected)throw new Error("Choose a saved target first.");const t=await api("GET","/targets/"+encodeURIComponent(selected));if(epoch!==targetEpoch)return;clearTargetDraft();displayTarget(t)}catch(e){if(e instanceof StaleResponse||epoch!==targetEpoch)return;say("targetmsg",e.message,1)}};
 $("savetarget").onclick=async()=>{const epoch=++targetEpoch;try{const r=await api("POST","/targets",{title:$("targettitle").value,organization:$("targetorg").value,rawText:$("targettext").value,sourceUrl:$("targeturl").value,parentTargetId:targetParent});if(epoch!==targetEpoch)return;clearTargetDraft();displayTarget(r.target);say("targetmsg","Saved immutable target version for "+r.target.title+". "+r.invalidatedDraftIds.length+" prior approval(s) cleared. "+(rid?"Source "+rid+" is selected. Create a source-preserving draft when ready.":"Open the Resume page and select or parse a source version first."));await loadTargets()}catch(e){if(e instanceof StaleResponse||epoch!==targetEpoch)return;say("targetmsg",e.message,1)}};
-$("drafttarget").onclick=async()=>{const epoch=++draftGeneration,te=targetEpoch,requested=rid,target=tid;try{if(!requested)throw new Error("Parse or reopen a resume version first.");if(!target||targetDirty)throw new Error("Save or open a pasted target version first.");const d=await api("POST","/tailor/target",{resumeId:requested,targetId:target});if(epoch!==draftGeneration||te!==targetEpoch||requested!==rid||target!==tid)return;did=d.draftId;$("dres").value=savedRes=d.tailoredResume;$("dnote").value=savedNote=d.coverNote;setStatus("draft");refresh();say("dmsg",d.coverageNote+" Human approval is required for this exact source and target version.");on("s3");await loadSavedDrafts();routePage("draft")}catch(e){if(e instanceof StaleResponse||epoch!==draftGeneration||te!==targetEpoch)return;say("targetmsg",e.message,1)}};
+async function targetDraft(ack){const epoch=++draftGeneration,te=targetEpoch,requested=rid,target=tid;try{if(!requested)throw new Error("Parse or reopen a resume version first.");if(!target||targetDirty)throw new Error("Save or open a pasted target version first.");const d=await api("POST","/tailor/target",{resumeId:requested,targetId:target,acknowledgeRoleChange:!!ack});if(epoch!==draftGeneration||te!==targetEpoch||requested!==rid||target!==tid)return;did=d.draftId;hideRoleAck();$("dres").value=savedRes=d.tailoredResume;$("dnote").value=savedNote=d.coverNote;setStatus("draft");refresh();say("dmsg",d.coverageNote+" Human approval is required for this exact source and target version."+(d.roleGuardrail?" Role-fit note: "+d.roleGuardrail.note:""));on("s3");await loadSavedDrafts();routePage("draft")}catch(e){if(e instanceof StaleResponse||epoch!==draftGeneration||te!==targetEpoch)return;if(e.code==="role_change_needs_acknowledgment"){showRoleAck("roleackt",e.message);return}say("targetmsg",e.message,1)}};
+$("drafttarget").onclick=()=>targetDraft(false);
 function showParsed(p,label){
   $("parsed").className="msg";
   $("parsed").innerHTML=(label?esc(label)+"<br>":"")+"<b>"+esc(p.name)+"</b><br>"+p.skills.map(s=>'<span class="chip">'+esc(s)+"</span>").join("")+(p.skills.length?"":"<p>No supported skill phrases detected. This does not mean you have no skills.</p>")+'<p class="note">'+esc((p.parseWarnings||[]).join(" "))+'</p>'+(p.skillEvidence?.length?'<details><summary>Skill source and review</summary><ul>'+p.skillEvidence.map(e=>'<li>'+esc(e.skill)+': &quot;'+esc(e.matchedText)+'&quot; ('+esc(({known_phrase:'source phrase',explicit_skill_list:'source skills list',legacy_parse:'legacy parse',user_statement:'your added statement, not extracted'})[e.source]||'source not recorded')+(e.reviewStatus==='user_confirmed'?', confirmed by you':'')+')</li>').join("")+'</ul></details>':"")+(p.uncertainSkills?.length?'<p class="note">Not counted without review: '+p.uncertainSkills.map(e=>esc(e.skill)+" ("+esc(e.reason)+")").join("; ")+"</p>":"");
@@ -551,12 +554,18 @@ $("pdffile").onchange=async()=>{const f=$("pdffile").files[0];if(!f)return;
   if(request!==sourceRequest)return; resetSourceResults();rid=j.resumeId; $("resume").value=j.sourceText; showParsed(j.parsed,"Uploaded PDF: "+f.name); await loadSavedVersions();await loadJobs();
 }catch(e){if(e instanceof StaleResponse||auth!==token()||generation!==sourceGeneration||request!==sourceRequest)return;say("parsed",e.message,1)}};
 function setStatus(s){$("status").textContent=s;$("status").className="tag "+s}
-async function tailor(j){const epoch=++draftGeneration;try{
+let pendingRoleAck=null;
+function hideRoleAck(){["roleack","roleackt"].forEach(id=>$(id).hidden=true);pendingRoleAck=null}
+function showRoleAck(which,msg){pendingRoleAck=which;$(which+"msg").textContent=msg;$(which).hidden=false;$(which+"box").checked=false}
+$("roleackgo").onclick=async()=>{if(!$("roleackbox").checked){$("roleackmsg").textContent="Tick the acknowledgment box first, or pick a different listing.";return}const jobId=pendingRoleAck&&pendingRoleAck.jobId;hideRoleAck();if(jobId)await tailor(jobId,true)};
+$("roleacktgo").onclick=async()=>{if(!$("roleacktbox").checked){$("roleacktmsg").textContent="Tick the acknowledgment box first, or change the target.";return}hideRoleAck();await targetDraft(true)};
+async function tailor(j,ack){const epoch=++draftGeneration;try{
   const requested=rid,generation=sourceGeneration;
-  const d=await api("POST","/tailor",{resumeId:requested,jobId:j});if(epoch!==draftGeneration||generation!==sourceGeneration||requested!==rid)return; did=d.draftId;
+  const d=await api("POST","/tailor",{resumeId:requested,jobId:j,acknowledgeRoleChange:!!ack});if(epoch!==draftGeneration||generation!==sourceGeneration||requested!==rid)return; did=d.draftId;
+  hideRoleAck();
   $("dres").value=savedRes=d.tailoredResume;$("dnote").value=savedNote=d.coverNote;setStatus("draft");refresh();
-  displayTarget(null);say("dmsg","Draft only. Skill gaps for this job: "+(d.skillGaps.join(", ")||"none")+". A person must review it before use."+(d.profileGaps&&d.profileGaps.length?" Profile answers still unknown: "+d.profileGaps.join(", ")+" - confirm them on the Resume page; nothing was guessed.":""));on("s3");routePage("draft");
-}catch(e){if(e instanceof StaleResponse||epoch!==draftGeneration)return;say("dmsg",e.message,1)}}
+  displayTarget(null);say("dmsg","Draft only. Skill gaps for this job: "+(d.skillGaps.join(", ")||"none")+". A person must review it before use."+(d.profileGaps&&d.profileGaps.length?" Profile answers still unknown: "+d.profileGaps.join(", ")+" - confirm them on the Resume page; nothing was guessed.":"")+(d.roleGuardrail?" Role-fit note: "+d.roleGuardrail.note:""));on("s3");routePage("draft");
+}catch(e){if(e instanceof StaleResponse||epoch!==draftGeneration)return;if(e.code==="role_change_needs_acknowledgment"){showRoleAck("roleack",e.message);return}say("dmsg",e.message,1)}}
 $("edit").onclick=async()=>{const epoch=++draftGeneration,requested=did;try{
   const generation=sourceGeneration;
   const submittedRes=$("dres").value,submittedNote=$("dnote").value;

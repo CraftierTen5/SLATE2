@@ -85,9 +85,14 @@ def cmd_jobs(a):
     print("note: sample listings; score = share of listing skills on the resume, not a good-match claim")
 
 def cmd_tailor(a):
-    r = call(a.server, "POST", "/tailor", {"resumeId": a.resume_id, "jobId": a.job_id})
+    # A recognized role-family mismatch answers 409 role_change_needs_acknowledgment
+    # with the review note; rerun with --acknowledge-role-change to proceed.
+    r = call(a.server, "POST", "/tailor", {"resumeId": a.resume_id, "jobId": a.job_id,
+                                           "acknowledgeRoleChange": a.acknowledge_role_change})
     print(f"draftId: {r['draftId']}  (draft only - review and approve before any use)")
     print("skill gaps: " + (", ".join(r["skillGaps"]) or "none"))
+    if r.get("roleGuardrail"):
+        print("role-fit note: " + r["roleGuardrail"]["note"])
     print("--- tailored resume ---\n" + r["tailoredResume"])
     print("--- cover note ---\n" + r["coverNote"])
 
@@ -148,6 +153,8 @@ def main(argv=None):
     p = sub.add_parser("jobs"); p.add_argument("--query", default=""); p.add_argument("--location", default="")
     p.add_argument("--resume-id"); p.set_defaults(f=cmd_jobs)
     p = sub.add_parser("tailor"); p.add_argument("--resume-id", required=True); p.add_argument("--job-id", required=True)
+    p.add_argument("--acknowledge-role-change", action="store_true",
+                   help="confirm an intended role-family switch after reading the role-fit note")
     p.set_defaults(f=cmd_tailor)
     for name in ("approve", "reject"):
         p = sub.add_parser(name); p.add_argument("--draft-id", required=True); p.set_defaults(f=cmd_decide)

@@ -42,6 +42,9 @@ STATUS.setdefault("ai_not_configured", 503)  # appended, so sibling PRs editing 
 STATUS.setdefault("profile_not_confirmed", 422)
 STATUS.setdefault("invalid_profile", 422)
 # --- End profile feature ---
+# --- Role-fit guardrail ---
+STATUS.setdefault("role_change_needs_acknowledgment", 409)
+# --- End role-fit guardrail ---
 # --- Interview feature ---
 STATUS.setdefault("session_not_found", 404)
 STATUS.setdefault("mode_unsupported", 422)
@@ -73,11 +76,13 @@ class TargetIn(BaseModel):
 class TargetTailorIn(BaseModel):
     resumeId: str
     targetId: str
+    acknowledgeRoleChange: StrictBool = False  # role-fit guardrail
 
 
 class TailorIn(BaseModel):
     resumeId: str
     jobId: str
+    acknowledgeRoleChange: StrictBool = False  # role-fit guardrail
 
 class RoadmapIn(BaseModel):
     resumeId: str
@@ -177,12 +182,12 @@ def _mount(r: APIRouter, get_svc):
 
     @r.post("/tailor/target")
     def tailor_target(request: Request, b: TargetTailorIn):
-        with get_svc(request) as svc: return svc.tailor_target(b.resumeId, b.targetId)
+        with get_svc(request) as svc: return svc.tailor_target(b.resumeId, b.targetId, b.acknowledgeRoleChange)
 
 
     @r.post("/tailor")
     def tailor(request: Request, b: TailorIn):
-        with get_svc(request) as svc: return svc.tailor(b.resumeId, b.jobId)
+        with get_svc(request) as svc: return svc.tailor(b.resumeId, b.jobId, b.acknowledgeRoleChange)
 
     @r.post("/tailor/ai")
     def tailor_ai(request: Request, b: TailorIn):
@@ -192,7 +197,7 @@ def _mount(r: APIRouter, get_svc):
             if fn is None or not os.getenv("LLM_API_KEY"):
                 raise SlateError("ai_not_configured",
                                  "AI tailoring is off on this server. Set LLM_API_KEY to enable it.")
-            return fn(b.resumeId, b.jobId)
+            return fn(b.resumeId, b.jobId, acknowledge_role_change=b.acknowledgeRoleChange)
 
     @r.get("/drafts")
     def list_drafts(request: Request):

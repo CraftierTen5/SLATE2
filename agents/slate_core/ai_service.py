@@ -38,11 +38,17 @@ class AISlateService(SlateService):
     def _blocks(self, resume_id, job):
         return source_blocks(self._texts[resume_id], job)
 
-    def tailor_ai(self, resume_id, job_id, client=None) -> dict:
+    def tailor_ai(self, resume_id, job_id, client=None, acknowledge_role_change=False) -> dict:
         parsed = self._resume(resume_id)
         job = J.get_job(job_id)
         if job is None:
             raise SlateError("job_not_found", "No job with that id.")
+        # Same role-fit acknowledgment gate as the deterministic tailor: the
+        # opt-in AI route cannot bypass it, and it fires BEFORE any model call.
+        from .role_fit import MISMATCH, role_fit_review
+        guard = role_fit_review(parsed, job["title"], job.get("skills"))
+        if guard["kind"] == MISMATCH and not acknowledge_role_change:
+            raise SlateError("role_change_needs_acknowledgment", guard["note"])
         client = client or self._llm_client or GroqLLM()
         blocks = self._blocks(resume_id, job)
         text = client.generate(build_grounded_prompt(blocks))
@@ -55,15 +61,17 @@ class AISlateService(SlateService):
         violations = validate(parsed, self._texts[resume_id], resume, note)
         violations += check_grounding(resume, blocks, allow_job=False)
         violations += check_grounding(note, blocks)
-        did = self.approvals.create_draft(
-            resume_id, job_id,
-            {"tailoredResume": resume, "coverNote": note, "aiGenerated": True})
+        content = {"tailoredResume": resume, "coverNote": note, "aiGenerated": True}
+        if guard["kind"] == MISMATCH:
+            content["roleChangeAcknowledgedByUser"] = True
+        did = self.approvals.create_draft(resume_id, job_id, content)
         self._persist()
         return {"draftId": did, "tailoredResume": resume,
                 "coverNote": note, "status": "draft",
                 "aiGenerated": True,
                 "claimsChecked": claims, "skillGaps": [s for s in job["skills"] if s not in claims],
                 "flaggedClaims": flagged, "violations": violations,
+                "roleGuardrail": guard,
                 "requiresApproval": True}
 
     def get_draft(self, draft_id):

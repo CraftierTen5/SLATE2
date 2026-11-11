@@ -214,11 +214,17 @@ class SlateService:
     def list_targets(self):
         return {"totalCount": len(self._targets), "targets": [self.get_target(tid) for tid in list(reversed(self._targets))[:100]]}
 
-    def tailor_target(self, resume_id, target_id):
+    def tailor_target(self, resume_id, target_id, acknowledge_role_change=False):
         import hashlib
         from .targets import source_preserving_content
         parsed = self._resume(resume_id)
         target = self.get_target(target_id)
+        # Same role-fit acknowledgment gate as the fixture tailor (title-only
+        # family evidence for pasted targets; insufficient evidence is labeled).
+        from .role_fit import MISMATCH, role_fit_review
+        guard = role_fit_review(parsed, target["title"])
+        if guard["kind"] == MISMATCH and not acknowledge_role_change:
+            raise SlateError("role_change_needs_acknowledgment", guard["note"])
         original = self.get_resume(resume_id)["sourceText"]
         try:
             content = source_preserving_content(original, parsed.get("skillEvidence", []), target)
@@ -227,12 +233,15 @@ class SlateService:
         content.update(targetId=target_id, targetSnapshot=target,
                        originalSourceSha256=hashlib.sha256(original.encode("utf-8")).hexdigest(),
                        outputMode="source_preserving_draft_not_rewrite")
+        if guard["kind"] == MISMATCH:
+            content["roleChangeAcknowledgedByUser"] = True
         bad = self._violations(resume_id, content)
         if bad:
             raise SlateError("unsupported_claim", "Source-preserving draft failed checks: " + "; ".join(bad))
         did = self.approvals.create_draft(resume_id, target_id, content)
         self._persist()
         return {"draftId": did, **content, "status": "draft", "requiresApproval": True,
+                "roleGuardrail": guard,
                 "coverageNote": "Original source retained. Job requirements are user-pasted, not verified or fully parsed. No fit score or full CV rewrite is claimed."}
 
 
@@ -283,19 +292,31 @@ class SlateService:
                       "Raw pasted text:", target["rawText"]]
         return "\n".join(lines) + "\n"
 
-    def _tailor(self, resume_id, job_id) -> dict:
+    def _tailor(self, resume_id, job_id, acknowledge_role_change=False) -> dict:
         parsed = self._resume(resume_id)
         job = J.get_job(job_id)
         if job is None:
             raise SlateError("job_not_found", "No job with that id.")
+        # Role-fit guardrail: a recognized resume/target family mismatch needs an
+        # explicit user acknowledgment BEFORE any draft exists. Career switches
+        # stay possible; they are just never blind. Insufficient family evidence
+        # is labeled, never treated as fit (role_fit.py owns the states).
+        from .role_fit import MISMATCH, role_fit_review
+        guard = role_fit_review(parsed, job["title"], job.get("skills"))
+        if guard["kind"] == MISMATCH and not acknowledge_role_change:
+            raise SlateError("role_change_needs_acknowledgment", guard["note"])
         d = build_draft(parsed, job, self._profile)
         bad = self._violations(resume_id, d)
         if bad:  # generated drafts must pass the same check as edited ones
             raise SlateError("unsupported_claim", "Generated draft failed claim check: " + "; ".join(bad))
-        did = self.approvals.create_draft(resume_id, job_id, {"tailoredResume": d["tailoredResume"], "coverNote": d["coverNote"]})
+        content = {"tailoredResume": d["tailoredResume"], "coverNote": d["coverNote"]}
+        if guard["kind"] == MISMATCH:
+            content["roleChangeAcknowledgedByUser"] = True
+        did = self.approvals.create_draft(resume_id, job_id, content)
         return {"draftId": did, "tailoredResume": d["tailoredResume"], "coverNote": d["coverNote"],
                 "status": "draft", "claimsChecked": d["claims"], "skillGaps": d["gaps"],
-                "profileGaps": d["profileGaps"]}
+                "profileGaps": d["profileGaps"],
+                "roleGuardrail": guard}
 
     # --- Profile feature ---
     def get_profile(self) -> dict:

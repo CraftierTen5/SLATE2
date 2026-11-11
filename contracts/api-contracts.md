@@ -240,3 +240,40 @@ text, or job descriptions.
 Confirmed answers are user statements (`user_confirmed_answers_not_independently_verified`),
 stored per user in the same state document as resumes and drafts. The demo
 reset keeps the profile: confirming once and reusing is the feature.
+
+## Role-fit guardrail (additive)
+
+Blindly retargeting a resume at an unrelated role family (an SDE resume at a
+management posting) is gated behind an explicit user acknowledgment, on every
+draft entry point.
+
+- Before any draft is written, the deterministic `POST /v1/tailor` and
+  `POST /v1/tailor/target` routes and the opt-in AI route run
+  `role_fit_review(resume, job)` (`agents/slate_core/role_fit.py`), which
+  returns one of three labeled kinds:
+  - `family_mismatch_needs_acknowledgment` - the resume's parsed skills and
+    experience titles clearly match one role keyword family, the target
+    clearly matches a different one, and neither side is ambiguous. The
+    route then refuses with HTTP 409 `role_change_needs_acknowledgment` and
+    the review note in the error message. No draft is created.
+  - `same_keyword_family_not_a_fit_assessment` - both sides hit the same
+    family (or one side matches nothing). Not a fit assessment; drafting
+    proceeds unchanged.
+  - `insufficient_evidence_no_assessment` - not enough keyword evidence to
+    say anything. Drafting proceeds unchanged; unknown never implies fit.
+- Every route accepts `acknowledgeRoleChange: true` (default false). With it
+  on a mismatch, the draft is created, marked
+  `roleChangeAcknowledgedByUser: true` in its content, and the response
+  carries `roleGuardrail` (the full review, including
+  `reviewKind: "keyword_review_not_a_fit_assessment"`). Non-mismatch drafts
+  carry the same `roleGuardrail` field for transparency.
+- The review is keyword evidence only: it scans parsed skills and experience
+  titles on the resume side (never summary prose, so a negation like
+  "no management experience" cannot classify the resume), and title,
+  description and required skills on the target side. Family vocabularies
+  are small and listed in the module. It can be wrong; that is why it gates
+  behind an acknowledgment instead of blocking, and why the claim gate is
+  unchanged - a mismatch draft still contains only original resume facts.
+- CLI: `tailor --acknowledge-role-change`. Web: a checkbox acknowledgment
+  appears under the failed action; the draft is retried only after the box
+  is ticked and the button clicked.
