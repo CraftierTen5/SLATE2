@@ -31,7 +31,7 @@ def test_real_negative_or_aspirational_still_protected(line):
 def test_header_with_title_keeps_only_name_and_ignores_header_as_job():
     p = parse_resume('Karan Mehta - Data Analyst\nkaran@example.com\nEducation\nB.Sc Statistics, 2022\nPGDM Analytics, 2024\nExperience\nData Analyst, FinCo, 2024-present\n')
     assert p['name'] == 'Karan Mehta'
-    assert [e['degree'] for e in p['education']] == ['B.SC', 'PGDM']
+    assert [e['degree'] for e in p['education']] == ['B.Sc', 'PGDM']
     assert p['education'][0]['institute'] == '' and p['education'][0]['year'] == 2022
     assert p['experience'] == [{'title': 'Data Analyst', 'org': 'FinCo', 'months': None}]
 
@@ -67,7 +67,7 @@ def test_bullets_and_goals_are_not_promoted_to_roles_or_degrees():
 def test_academic_qualifications_heading_and_degree_variants():
     p = parse_resume('Mohit Jain\nAcademic Qualifications\nMBA (HR), Example University, 2025, 7.9 CGPA\nB.Com, 2023\nM.A. Education, 2016; B.Ed, 2015\n')
     assert [(e['degree'], e['institute'], e['year']) for e in p['education']] == [
-        ('MBA', 'Example University', 2025), ('B.COM', '', 2023), ('M.A.', '', 2016), ('B.ED', '', 2015)]
+        ('MBA', 'Example University', 2025), ('B.Com', '', 2023), ('M.A.', '', 2016), ('B.Ed', '', 2015)]
 
 
 def test_added_vocabulary_is_literal_only():
@@ -86,8 +86,16 @@ def test_example_instruction_line_is_not_promoted_but_example_institute_is():
     p = parse_resume('Sam Roy\nEducation\nExample, Engineer at FakeCo (12 months)\n')
     assert p['experience'] == [] and p['education'] == []
     p = parse_resume('Sam Roy\nEducation\nB.Tech, Example, 2025\nExperience\nExample: Analyst at FakeCo (3 months)\n')
-    assert p['education'] == [{'degree': 'B.TECH', 'institute': 'Example', 'year': 2025}]
+    assert p['education'] == [{'degree': 'B.Tech', 'institute': 'Example', 'year': 2025}]
     assert p['experience'] == []
     p = parse_resume('Sam Roy\nEducation\nB.Tech Computer Science, IIT Example, 2023-2027\nMBA, Example University, 2025\n')
     assert [e['institute'] for e in p['education']] == ['IIT Example', 'Example University']
     assert parse_resume('Sam Roy\nEducation\nB.Tech, Example, 2025; Seeking engineer at FakeCo\n')['experience'] == []
+
+
+def test_source_casing_is_preserved_in_degrees_and_titles():
+    p = parse_resume('Riya Sharma\nSkills\nPython\nExperience\nML Intern, DataWorks, 2025\nHR Intern, Zenith Corp, 2024\nEducation\nB.Tech CSE, 2026\nB.Sc Statistics, 2022\n')
+    assert [e['title'] for e in p['experience']] == ['ML Intern', 'HR Intern']
+    assert [e['degree'] for e in p['education']] == ['B.Tech', 'B.Sc']
+    p = parse_resume('Jo Doe\nEducation\nB.TECH CSE, 2026\n')
+    assert p['education'][0]['degree'] == 'B.TECH'  # uppercase source stays uppercase

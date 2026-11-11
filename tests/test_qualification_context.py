@@ -23,7 +23,7 @@ def test_goal_or_instruction_section_does_not_promote_following_line(heading):
     text='Alex Example\n'+heading+'\nAnalyst at FutureCo (12 months)\nBachelor, Future College, 2027\nWork Experience\nIntern at ActualCo (3 months)\nEducation\nB.Tech, Actual College, 2025'
     p=parse_resume(text)
     assert p['experience']==[{'title':'Intern','org':'ActualCo','months':3}]
-    assert p['education']==[{'degree':'B.TECH','institute':'Actual College','year':2025}]
+    assert p['education']==[{'degree':'B.Tech','institute':'Actual College','year':2025}]
 
 
 def test_draft_does_not_restate_aspirational_job_or_denied_degree():

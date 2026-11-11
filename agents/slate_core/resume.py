@@ -77,7 +77,8 @@ def _education_entry(part):
         if seg and not _DATEISH.match(seg) and not _DEGREE.fullmatch(seg) and len(seg) <= 80:
             inst = seg
             break
-    return {"degree": m.group(1).upper().replace("..", "."), "institute": inst, "year": year}
+    # Source casing is preserved as written (only the '..' artifact is normalized).
+    return {"degree": m.group(1).replace("..", "."), "institute": inst, "year": year}
 
 
 def _experience_entry(line):
@@ -99,14 +100,14 @@ def _experience_entry(line):
             for cand in (others[i-1:i] if i >= 1 and len(others) >= i else []) + others:
                 cand = re.sub(r"\s*\(.*?\)\s*$", "", cand).strip()
                 if cand and not _DATEISH.match(cand) and not _TITLE_RE.fullmatch(cand) and not re.match(r"^(?:built|managed|wrote|led|worked)\b", cand, re.I):
-                    return {"title": _TITLE_RE.search(part).group(0).strip().title(), "org": cand, "months": mval}
+                    return {"title": _TITLE_RE.search(part).group(0).strip(), "org": cand, "months": mval}
             return None
     # prose: "<title> at <Org>"
     m = re.search(r"\b(" + _TITLES + r")\s+(?:at|with|for)\s+((?:[A-Z0-9][\w&.'-]*)(?:\s+(?:[A-Z0-9][\w&.'-]*|&|of|and))*?)(?=\s+(?:in|from|during|since|working|for|where|and)\b|\s*[,.(;]|\s+(?:19|20)\d\d|$)", line, re.I)
     if m and not re.search(r"\b(?:seeking|looking|aspir)", line, re.I):
         org = m.group(2).strip(" .")
         if org and not _DATEISH.match(org):
-            return {"title": m.group(1).title(), "org": org, "months": mval}
+            return {"title": m.group(1), "org": org, "months": mval}
     return None
 
 
