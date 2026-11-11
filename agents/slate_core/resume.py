@@ -33,8 +33,29 @@ def parse_resume(text: str) -> dict:
     qlines = list(qualification_lines(text))
     for qi, l in enumerate(qlines):
         for part in re.split(r";", l):
-            edu = _education_entry(part)
+            edu = _education_entry(part) or _school_entry(part)
             if edu:
+                # Templates often put dates and the institute on their own lines:
+                # degree / 2024 - 2026 / Institute · score. Join them, fail closed.
+                if not edu.get("institute"):
+                    end_year, ctx = None, None
+                    for off in range(1, 7):
+                        if qi + off >= len(qlines):
+                            break
+                        nl = qlines[qi + off]
+                        if not nl.strip() or _is_date_line(nl):
+                            yrs = re.findall(r"(?:19|20)\d\d", nl)
+                            if yrs:
+                                end_year = int(yrs[-1])
+                            continue
+                        ctx = _institute_context(nl)
+                        break
+                    if ctx:
+                        edu["institute"] = ctx["institute"]
+                        if "gpa" in ctx and "gpa" not in edu:
+                            edu["gpa"] = ctx["gpa"]
+                    if end_year and not edu.get("year"):
+                        edu["year"] = end_year
                 education.append(edu)
         exp = _experience_entry(l) if l != lines[0] else None
         if exp is None and l != lines[0]:
@@ -83,9 +104,11 @@ def _education_entry(part):
     # GPA/CGPA only when literally stated on the same education line, label and
     # scale kept exactly as written; never computed, converted or invented.
     gpa = None
-    gm = re.search(r"\b(cgpa|gpa)\b\s*[:=-]?\s*(\d+(?:\.\d+)?(?:\s*/\s*\d+(?:\.\d+)?)?)", part, re.I)
+    fwd = re.search(r"\b(cgpa|gpa)\b\s*[:=-]?\s*(\d+(?:\.\d+)?(?:\s*/\s*\d+(?:\.\d+)?)?)", part, re.I)
+    rev = re.search(r"\b(\d+(?:\.\d+)?(?:\s*/\s*\d+(?:\.\d+)?)?)\s*(cgpa|gpa)\b", part, re.I)
+    gm = (fwd.group(1), fwd.group(2)) if fwd else ((rev.group(2), rev.group(1)) if rev else None)
     if gm:
-        gpa = {"label": gm.group(1).upper(), "value": re.sub(r"\s+", "", gm.group(2))}
+        gpa = {"label": gm[0].upper(), "value": re.sub(r"\s+", "", gm[1])}
     if not m:
         # Prose education: "studied <subject> at <institute>, graduating <year>".
         # The subject is kept as written; it is what the source literally states.
@@ -235,6 +258,88 @@ def _experience_entry(line):
     return None
 
 
+_SCHOOL_RE = re.compile(
+    r"^((?:HSC|SSC|CBSE|ICSE)(?:\s*\(\s*Class\s*[XIVxiv0-9]{1,3}\s*\))?|"
+    r"Class\s*(?:XII|XI|X|IX|12|11|10|9)(?:\s*\([A-Za-z]+\))?)(?=\s*[,·|)]|$)", re.I)
+_PERCENT = re.compile(r"^(\d+(?:\.\d+)?\s*%)$")
+_GENERIC_SCHOOL = re.compile(r"^(?:secondary|higher secondary|senior secondary|high)\s+school$", re.I)
+
+
+def _school_entry(part):
+    """School-level rows (HSC/SSC/Class X/XII): board as institute, percentage kept
+    verbatim as a labeled score. Source casing preserved; no scale is ever invented."""
+    m = _SCHOOL_RE.match(part.strip())
+    if not m:
+        return None
+    rest = part[m.end():]
+    segments = [x.strip() for x in re.split(r",|\s[-\u2013\u2014]\s|\u00b7|\|", rest)]
+    segments = [x.strip(". ") for x in segments if x.strip(". ")]
+    inst, subject, score = "", None, None
+    y = re.search(r"((?:19|20)\d\d)", part)
+    for seg in segments:
+        pm = _PERCENT.match(seg)
+        if pm:
+            score = {"label": "Percentage", "value": pm.group(1).strip()}
+            continue
+        if _DATEISH.match(seg):
+            continue
+        if _GENERIC_SCHOOL.match(seg):
+            subject = subject or seg
+            continue
+        if re.search(r"\b(?:board|university|school|vidyalaya|college)\b", seg, re.I) and not inst:
+            inst = seg
+            continue
+        if subject is None and (_SUBJECT.fullmatch(seg) or re.search(r"\b(?:science|commerce|arts|humanities)\b", seg, re.I)):
+            subject = seg
+            continue
+        if not inst:
+            inst = seg
+    entry = {"degree": m.group(1).strip(), "institute": inst,
+             "year": int(y.group(1)) if y else None}
+    if subject:
+        entry["subject"] = subject
+    if score:
+        entry["gpa"] = score
+    return entry
+
+
+def _is_date_line(line):
+    """A line that is only a date range; an institute line ending in a score is not one."""
+    s2 = _strip_md(line)
+    return bool(_DATEISH.match(s2)) and not re.search(r"[,·|]", s2)
+
+
+def _institute_context(line):
+    """An adjacent line naming an institute, for degree lines whose institute sits on
+    the next line. Conservative like _org_context: fail closed on anything else."""
+    s2 = _strip_md(line)
+    if not s2 or len(s2) > 140 or re.match(r"^[•*\-–]\s", line.strip()):
+        return None
+    if _DEGREE.search(s2) or _SCHOOL_RE.match(s2) or _TITLE_RE.search(s2):
+        return None
+    if "@" in s2 or _SECTION_HEADING.fullmatch(s2) or s2.endswith(":"):
+        return None
+    segs = [x.strip() for x in re.split(r"\u00b7|\|", s2) if x.strip()]
+    inst = re.sub(r",?\s*(?:\d+(?:\.\d+)?\s*(?:/\s*\d+)?\s*(?:cgpa|gpa)|(?:cgpa|gpa)\s*[:=-]?\s*\d+(?:\.\d+)?(?:\s*/\s*\d+)?)$", "", segs[0], flags=re.I).strip(" .,")
+    if _DATEISH.match(inst):
+        return None
+    fwd = re.search(r"\b(cgpa|gpa)\b\s*[:=-]?\s*(\d+(?:\.\d+)?(?:\s*/\s*\d+(?:\.\d+)?)?)", s2, re.I)
+    rev = re.search(r"\b(\d+(?:\.\d+)?(?:\s*/\s*\d+(?:\.\d+)?)?)\s*(cgpa|gpa)\b", s2, re.I)
+    gm = (fwd.group(1), fwd.group(2)) if fwd else ((rev.group(2), rev.group(1)) if rev else None)
+    if not (2 <= len(inst.split()) <= 10 and re.search(r"[A-Za-z]", inst)):
+        return None
+    if inst.upper() == inst and not _ORG_SUFFIX.search(inst):
+        return None
+    out = {"institute": inst}
+    if gm:
+        out["gpa"] = {"label": gm[0].upper(), "value": re.sub(r"\s+", "", gm[1])}
+    else:
+        pm = re.search(r"\b(\d+(?:\.\d+)?\s*%)", s2)
+        if pm:
+            out["gpa"] = {"label": "Percentage", "value": pm.group(1)}
+    return out
+
+
 def _name_part(line):
     """Keep the name from 'Name - Job Title' / 'Name | City' headers and drop trailing symbols."""
     first = re.split(r"\s[-\u2013\u2014|]\s|\s\|\s|\s{2,}", line, 1)[0].strip()
@@ -287,6 +392,9 @@ def _qualification_uncertain(line):
     name an institute 'Example University' / 'IIT Example'. Only that shape is exempt;
     every other uncertainty word still applies, and non-degree lines keep 'example'."""
     probe = line.lstrip("-•* ")
+    # "no backlogs" is academic standing, not a denial of the qualification.
+    probe = re.sub(r",?\s*no backlogs\b", "", probe, flags=re.I)
+    line = re.sub(r",?\s*no backlogs\b", "", line, flags=re.I)
     m = _DEGREE.match(probe)
     if m and re.match(r"^(?:\W*|\s+)", probe[m.end():]):
         line = re.sub(r"\bexample\b", " ", line, flags=re.I)
