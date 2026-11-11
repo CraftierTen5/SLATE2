@@ -23,6 +23,22 @@ Vocabulary order decides ties: more specific families come first, so
 """
 
 _VOCAB = {
+    # Distinctive multi-word phrases outrank generic single tokens: a support
+    # resume that lists JavaScript is still visibly a support resume, and a
+    # mechanical engineer is not a software engineer. Short tokens that are
+    # substrings of common words (fea/feature, cad/academic, hr/three) are
+    # deliberately absent - this matcher is substring-based.
+    "mechanical_engineering": (
+        "mechanical engineer", "mechanical engineering", "mechanical design",
+        "solidworks", "autocad", "ansys", "gd&t", "dfmea", "pfmea",
+        "creo parametric", "sheet metal", "injection molding", "mechatronics",
+        "cnc machining", "tolerance stack-up", "tooling design",
+    ),
+    "support_operations": (
+        "support operations", "ticket triage", "qa workflows",
+        "technical support", "help desk", "service desk", "customer success",
+        "support specialist", "operations associate", "it support",
+    ),
     "engineering_technology": (
         "software", "developer", "sde", "backend", "front-end", "frontend",
         "full stack", "full-stack", "devops", "data analyst", "data scientist",
@@ -34,6 +50,12 @@ _VOCAB = {
         "cashier", "cash handling", "retail", "customer service",
         "customer support", "sales associate", "store manager", "hospitality",
         "served customers",
+    ),
+    "business": (
+        "business administration", "business analyst", "marketing",
+        "digital marketing", "finance", "accounting", "tally",
+        "human resources", "recruiter", "recruitment", "supply chain",
+        "investment banking", "brand management",
     ),
     "management_consulting": (
         "management consultant", "consulting", "consultant", "strategy",
