@@ -42,10 +42,10 @@ def reviewed_snapshot(parent, selected, confirmed):
 def section_previews(text):
     """Show bounded literal lines for review, never invent structured credentials."""
     headings = {
-        'education': {'education', 'qualifications', 'academic background', 'formation', 'educación', 'ausbildung', 'शिक्षा', '教育'},
-        'experience': {'experience', 'work experience', 'employment', 'employment history', 'professional experience', 'expérience', 'experiencia', 'berufserfahrung', 'अनुभव', '工作经历'},
+        'education': {'education', 'qualifications', 'academic qualifications', 'academic details', 'education and qualifications', 'academic background', 'formation', 'educación', 'ausbildung', 'शिक्षा', '教育'},
+        'experience': {'experience', 'work experience', 'internship', 'internships', 'work history', 'professional background', 'employment', 'employment history', 'professional experience', 'expérience', 'experiencia', 'berufserfahrung', 'अनुभव', '工作经历'},
     }
-    stops = set().union(*headings.values()) | {'skills', 'key skills', 'technical skills', 'projects', 'referees', 'references', 'leadership roles', 'interests', 'interests/hobbies', 'availability'}
+    stops = set().union(*headings.values()) | {'skills', 'key skills', 'technical skills', 'projects', 'referees', 'references', 'leadership roles', 'career objective', 'summary', 'profile', 'certifications', 'interests', 'interests/hobbies', 'availability'}
     result = {key: {'status': 'not_recognized', 'sourceLines': [],
                     'note': 'No supported section heading recognized. This does not mean no qualifications or experience.'} for key in headings}
     active = None

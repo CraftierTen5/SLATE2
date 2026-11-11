@@ -12,7 +12,8 @@ SKILL_ALIASES = {
     "git": (), "javascript": (), "react": ("react.js", "reactjs"),
     "typescript": (), "css": (), "pytorch": (), "tableau": (),
     "java": (), "c++": (), "docker": (), "aws": ("amazon web services",),
-    "figma": (),
+    "figma": (), "machine learning": (), "power bi": ("powerbi",),
+    "autocad": (), "solidworks": (), "matlab": (), "tally": ("tally erp", "tallyprime"),
     "communication": ("communications", "communication skills"),
     "customer service": ("customer support", "served customers"),
     "cash handling": ("handled cash", "cash register"),
@@ -58,7 +59,7 @@ _SKILL_HEADING = re.compile(
 _SECTION_HEADING = re.compile(
     r"^(?:education|experience|work experience|employment|projects|qualifications|"
     r"certifications|interests(?:/hobbies)?|referees|references|availability|"
-    r"career objective|summary|leadership roles|formation|expérience|educación|"
+    r"career objective|summary|academic qualifications|academic details|internship|internships|work history|professional experience|professional background|leadership roles|formation|expérience|educación|"
     r"experiencia|ausbildung|berufserfahrung|教育|工作经历|शिक्षा|अनुभव)\s*[:：]?\s*$", re.I)
 
 
@@ -142,6 +143,16 @@ def _review_text(text):
     return re.sub(r"[^\S\n]+", " ", low)
 
 
+# "Machine Learning" is a field name, not an aspiration to learn something.
+_LEARNING_NOUN = re.compile(
+    r"\b(?:machine|deep|reinforcement|transfer|supervised|unsupervised|federated|statistical|e|blended|"
+    r"organi[sz]ational)[\s-]+learning\b|\blearning\s+(?:management|analytics|design|and development|experience designer)\b", re.I)
+
+
+def _is_uncertain(context):
+    return bool(_UNCERTAIN.search(_LEARNING_NOUN.sub(" ", context)))
+
+
 def _context(low, match):
     start = max((low.rfind(c, 0, match.start()) for c in "\n.!?;"), default=-1) + 1
     ends = [low.find(c, match.end()) for c in "\n.!?;"]
@@ -201,7 +212,7 @@ def resume_skill_evidence(text):
             pattern = r"(?<![\w+#])" + re.escape(phrase).replace(r"\ ", r"[\s-]+") + r"(?![\w+#])"
             for match in re.finditer(pattern, low):
                 e = {"skill": skill, "matchedText": match.group(0), "source": "known_phrase"}
-                if _UNCERTAIN.search(_context(low, match)):
+                if _is_uncertain(_context(low, match)):
                     flagged.setdefault(skill, dict(e, reason="Negative, aspirational or instructional context; not counted without review."))
                 else:
                     accepted.setdefault(skill, e)
@@ -210,7 +221,7 @@ def resume_skill_evidence(text):
             continue
         phrase = re.escape(normalized(e["matchedText"])).replace(r"\ ", r"\s+")
         matches = list(re.finditer(phrase, low))
-        if matches and any(not _UNCERTAIN.search(_context(low, m)) for m in matches):
+        if matches and any(not _is_uncertain(_context(low, m)) for m in matches):
             accepted[e["skill"]] = e
         else:
             flagged.setdefault(e["skill"], dict(e, reason="Negative, aspirational or instructional context; not counted without review."))

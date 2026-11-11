@@ -11,7 +11,7 @@ MAX_PDF_PAGES = 20
 _QUALIFICATION_UNCERTAIN = re.compile(
     r"\b(?:no|not|never|without|lack|lacking|unfamiliar|seeking|aspir(?:e|es|ing)|"
     r"want(?:s)? to|wish(?:es)? to|plan(?:s|ning)? to|hop(?:e|es|ing) to|"
-    r"interested in|learning|learn|instruction|example|pursuing|prospective)\b", re.I)
+    r"interested in|learning|learn|instruction|example(?!\s+(?:university|institute|college|school))|pursuing|prospective)\b", re.I)
 
 class ParseError(ValueError):
     pass
@@ -31,20 +31,94 @@ def parse_resume(text: str) -> dict:
     skills = [item["skill"] for item in evidence]
     education, experience = [], []
     for l in qualification_lines(text):
-        m = re.search(r"(?<![a-z])(b\.?tech|m\.?tech|bca|mca|b\.?sc|m\.?sc|bachelor|master)(?![a-z])[^,\n]*", l, re.I)
-        if m:
-            y = re.search(r"(20\d\d)", l)
-            education.append({"degree": m.group(1).upper().replace("..", "."), "institute": _after(l, ","),
-                              "year": int(y.group(1)) if y else None})
-        m = re.search(r"(intern|developer|analyst|engineer)\b.*?(?:at|,|-)\s*([A-Za-z0-9 &.]+?)\s*(?:\((\d+)\s*months?\)|$)", l, re.I)
-        if m and not re.search(r"b\.?tech|bachelor", l, re.I):
-            experience.append({"title": m.group(1).title(), "org": m.group(2).strip(),
-                               "months": int(m.group(3)) if m.group(3) else None})
+        for part in re.split(r";", l):
+            edu = _education_entry(part)
+            if edu:
+                education.append(edu)
+        exp = _experience_entry(l) if l != lines[0] else None
+        if exp and not _EDU_WORDS.search(l):
+            experience.append(exp)
     return {"name": name, "nameEvidence": name_evidence, "skills": skills, "education": education, "experience": experience,
             "skillEvidence": evidence, "uncertainSkills": uncertain,
             "sectionReview": section_previews(text),
             "parseWarnings": ["Skill candidates from phrase matches and explicit lists, not verified proficiency or a complete resume assessment. "
                               "Review the detected skills; education and work-history extraction are limited."]}
+
+_DEGREE = re.compile(
+    r"(?<![a-z])(b\.?\s?tech|m\.?\s?tech|b\.?e\.?|m\.?e\.?|bca|mca|b\.?sc\.?|m\.?sc\.?|b\.?com\.?|m\.?com\.?|"
+    r"b\.?a\.?|m\.?a\.?|b\.?ed\.?|m\.?ed\.?|bba|mba|pgdm|b\.?arch|ph\.?d|diploma|bachelor|master)(?![a-z])", re.I)
+_EDU_WORDS = re.compile(r"(?<![a-z])(b\.?tech|m\.?tech|bca|mca|b\.?sc|m\.?sc|bachelor|master|mba|pgdm|b\.?com|b\.?ed|b\.?e)(?![a-z])", re.I)
+_DATEISH = re.compile(r"^(?:\(?(?:19|20)\d\d(?:\s*[-\u2013to]+\s*(?:(?:19|20)\d\d|present|ongoing))?\)?|cgpa.*|.*cgpa|gpa.*|\d+(?:\.\d+)?\s*(?:/\s*10)?%?)$", re.I)
+_TITLES = (r"internship|intern|trainee|developer|analyst|engineer|executive|manager|assistant|associate|designer|consultant|"
+           r"officer|teacher|coordinator|specialist|administrator|technician|accountant|recruiter|lead|"
+           r"representative|scientist|architect|tutor|coach")
+_TITLE_RE = re.compile(r"\b(?:[A-Za-z]+\s){0,3}?(?:" + _TITLES + r")\b", re.I)
+
+
+def _education_entry(part):
+    """Degree, institute and year from one education line; institute only if literally present."""
+    part = part.strip().lstrip("-•* ")
+    m = _DEGREE.search(part)
+    if not m or len(part) > 160:
+        return None
+    # A degree token must start the line (or follow a bullet), so prose that merely
+    # mentions "master" or "B.E." later in a sentence is not promoted to history.
+    if m.start() > 3 and not re.match(r"^(?:\W*)(?:completed|pursued|graduated)", part, re.I):
+        return None
+    y = re.search(r"((?:19|20)\d\d)", part)
+    year = None
+    if y:
+        years = re.findall(r"(?:19|20)\d\d", part)
+        year = int(years[-1])
+    inst = ""
+    segments = [x.strip() for x in re.split(r",|\s[-\u2013]\s", part)[1:]]
+    for seg in segments:
+        seg = seg.strip(". ")
+        if seg and not _DATEISH.match(seg) and not _DEGREE.fullmatch(seg) and len(seg) <= 80:
+            inst = seg
+            break
+    return {"degree": m.group(1).upper().replace("..", "."), "institute": inst, "year": year}
+
+
+def _experience_entry(line):
+    """Title and employer from 'Org, Title, dates', 'Title, Org, dates' or 'Title at Org'."""
+    line = line.strip()
+    if re.match(r"^[•*\-–]\s", line) or len(line) > 220:
+        return None
+    head = re.split(r"[:：]", line, 1)[0]
+    months = re.search(r"\((\d+)\s*months?\)", line)
+    mval = int(months.group(1)) if months else None
+    head = re.sub(r"\((?:[^()]*)\)", lambda m: " " if re.search(r"(?:19|20)\d\d|month|present", m.group(0), re.I) else m.group(0), head)
+    parts = [x.strip() for x in re.split(r",|\s[-\u2013]\s", head)]
+    parts = [x for x in parts if x]
+    # structured: some part that is essentially just a job title
+    for i, part in enumerate(parts):
+        t = _TITLE_RE.fullmatch(re.sub(r"\s*\(.*?\)\s*", " ", part).strip())
+        if t:
+            others = [x for j, x in enumerate(parts) if j != i]
+            for cand in (others[i-1:i] if i >= 1 and len(others) >= i else []) + others:
+                cand = re.sub(r"\s*\(.*?\)\s*$", "", cand).strip()
+                if cand and not _DATEISH.match(cand) and not _TITLE_RE.fullmatch(cand) and not re.match(r"^(?:built|managed|wrote|led|worked)\b", cand, re.I):
+                    return {"title": _TITLE_RE.search(part).group(0).strip().title(), "org": cand, "months": mval}
+            return None
+    # prose: "<title> at <Org>"
+    m = re.search(r"\b(" + _TITLES + r")\s+(?:at|with|for)\s+((?:[A-Z0-9][\w&.'-]*)(?:\s+(?:[A-Z0-9][\w&.'-]*|&|of|and))*?)(?=\s+(?:in|from|during|since|working|for|where|and)\b|\s*[,.(;]|\s+(?:19|20)\d\d|$)", line, re.I)
+    if m and not re.search(r"\b(?:seeking|looking|aspir)", line, re.I):
+        org = m.group(2).strip(" .")
+        if org and not _DATEISH.match(org):
+            return {"title": m.group(1).title(), "org": org, "months": mval}
+    return None
+
+
+def _name_part(line):
+    """Keep the name from 'Name - Job Title' / 'Name | City' headers and drop trailing symbols."""
+    first = re.split(r"\s[-\u2013\u2014|]\s|\s\|\s|\s{2,}", line, 1)[0].strip()
+    if first and first != line and 1 <= len(first.split()) <= 5 and all(
+            unicodedata.category(c)[0] in {"L", "M"} or c in " '-’." for c in first):
+        return first
+    stripped = re.sub(r"[\s\W_]+$", "", line) if re.search(r"[^\w\s'’.-]\s*$", line) else line
+    return stripped if stripped and any(c.isalpha() for c in stripped) else line
+
 
 def name_candidate(lines):
     """A bounded header heuristic, never identity verification.
@@ -56,7 +130,7 @@ def name_candidate(lines):
     sections = {"skills", "key skills", "technical skills", "education", "experience",
                 "work experience", "summary", "profile", "career objective", "objective",
                 "compétences", "habilidades", "fähigkeiten", "कौशल", "技能",
-                "qualifications", "academic background", "formation", "educación", "ausbildung", "शिक्षा", "教育",
+                "qualifications", "academic qualifications", "academic details", "education and qualifications", "internship", "internships", "work history", "professional background", "academic background", "formation", "educación", "ausbildung", "शिक्षा", "教育",
                 "employment", "employment history", "professional experience", "expérience", "experiencia", "berufserfahrung", "अनुभव", "工作经历"}
     for line in lines[:8]:
         label = line.casefold().rstrip(':：')
@@ -68,6 +142,7 @@ def name_candidate(lines):
             break
         if re.match(r"^(?:name|full name)\s*[:：]", line, re.I):
             line = re.sub(r"^(?:name|full name)\s*[:：]\s*", "", line, flags=re.I)
+        line = _name_part(line)
         # Names can be one word or contain apostrophes/hyphens. Reject digits,
         # contact syntax and unsupported punctuation, not non-Latin letters.
         if (1 <= len(line.split()) <= 5 and len(line) <= 100
@@ -75,6 +150,10 @@ def name_candidate(lines):
                 and any(c.isalpha() for c in line)):
             return line, {"status": "header_candidate_not_verified", "sourceText": line}
         break
+    # No standalone name line: accept only an explicit "<Capitalised Name> is/am ..." opening.
+    m = re.match(r"^([A-Z][a-z'’-]+(?:\s[A-Z][a-z'’-]+){1,3})\s+(?:is|am|has)\b", lines[0]) if lines else None
+    if m:
+        return m.group(1), {"status": "header_candidate_not_verified", "sourceText": m.group(1)}
     return "Unknown", {"status": "not_recognized", "sourceText": None}
 
 
@@ -96,7 +175,7 @@ def qualification_lines(text):
                              "projects", "personal projects", "academic projects", "references", "referees", "interests", "hobbies", "interests/hobbies"}:
             excluded_section = True
             continue
-        if label in {"education", "qualifications", "academic background", "experience", "work experience", "employment", "employment history", "professional experience", "formation", "educación", "ausbildung", "शिक्षा", "教育", "expérience", "experiencia", "berufserfahrung", "अनुभव", "工作经历"}:
+        if label in {"education", "qualifications", "academic qualifications", "academic details", "education and qualifications", "internship", "internships", "work history", "professional background", "academic background", "experience", "work experience", "employment", "employment history", "professional experience", "formation", "educación", "ausbildung", "शिक्षा", "教育", "expérience", "experiencia", "berufserfahrung", "अनुभव", "工作经历"}:
             excluded_section = False
             continue
         # A literal degree/job-title mention is not necessarily a qualification.

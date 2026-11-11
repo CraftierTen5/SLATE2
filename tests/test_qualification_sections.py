@@ -11,7 +11,7 @@ from slate_core.service import SlateService
 def test_non_history_degree_and_title_mentions_not_promoted(heading):
     text='Alex Example\n'+heading+'\nMaster data management\nDeveloper at Demo Company (2 months)\nEducation\nB.Tech, Actual College, 2025\nWork Experience\nIntern at ActualCo (3 months)'
     p=parse_resume(text)
-    assert p['education']==[{'degree':'B.TECH','institute':'Actual College, 2025','year':2025}]
+    assert p['education']==[{'degree':'B.TECH','institute':'Actual College','year':2025}]
     assert p['experience']==[{'title':'Intern','org':'ActualCo','months':3}]
     assert any('degree' in e for e in validate(p,text,'Education: Master'))
 
