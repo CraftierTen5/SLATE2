@@ -1,0 +1,89 @@
+"""Audit F1 pins (10-sample internet audit, 2026-11-11): section-heading words
+and PDF-wrapped 'skills.' prose fragments must never become earned skills.
+Synthetic fixtures modeled on the public samples; no personal data."""
+import sys
+from pathlib import Path
+sys.path.insert(0, str(Path(__file__).resolve().parents[1] / 'agents'))
+from slate_core.resume import parse_resume
+
+
+def test_positions_of_responsibility_heading_is_not_a_skill():
+    text = (
+        "Ananya Kulkarni\n"
+        "Skills\n"
+        "Technical: Java, Python, Git\n"
+        "Education\n"
+        "B.E., Computer Engineering\n"
+        "Positions of Responsibility\n"
+        "- Technical head, college coding club: ran weekly sessions for juniors\n"
+    )
+    parsed = parse_resume(text)
+    assert "responsibility" not in parsed["skills"]
+    assert all(e["skill"] != "responsibility" for e in parsed["skillEvidence"])
+    flagged = parsed.get("uncertainSkills", [])
+    assert any(e["skill"] == "responsibility" and "heading" in e["reason"] for e in flagged)
+
+
+def test_take_responsibility_skill_list_line_still_counts():
+    # The retail fixture earned 'responsibility' from a skills-list sentence,
+    # which is a genuine candidate claim and must keep working.
+    text = (
+        "Alex Example\n"
+        "Key Skills\n"
+        "Able to take responsibility and solve problems.\n"
+    )
+    parsed = parse_resume(text)
+    assert "responsibility" in parsed["skills"]
+
+
+def test_wrapped_prose_skills_fragment_does_not_open_a_skills_section():
+    # PDF extraction wrapped "...communication skills." so 'skills.' sat alone
+    # on a line; the following involvement bullet must not become skill items.
+    text = (
+        "Leo Leopard\n"
+        "Objective\n"
+        "To obtain a position which utilizes my strong communication\n"
+        "skills.\n"
+        "\n"
+        "On Campus Involvement\n"
+        "Member\n"
+        "- Led groups of 9 students in discussion on success skills, business ethics, and personal\n"
+        "finances\n"
+    )
+    parsed = parse_resume(text)
+    assert "ethics" not in parsed["skills"]
+    assert "business ethics" not in parsed["skills"]
+    assert all("ethic" not in e["skill"] for e in parsed["skillEvidence"])
+    # The genuine mention of communication in the objective still counts.
+    assert "communication" in parsed["skills"]
+
+
+def test_skills_comma_fragment_does_not_open_a_skills_section():
+    text = (
+        "Leo Leopard\n"
+        "Objective\n"
+        "Using my teamwork and organizational\n"
+        "skills,\n"
+        "I contribute to group projects.\n"
+        "- Built models with MATLAB, and presented findings\n"
+    )
+    parsed = parse_resume(text)
+    assert "and presented findings" not in parsed["skills"]
+    assert all("presented findings" not in e["skill"] for e in parsed["skillEvidence"])
+    assert "matlab" in parsed["skills"]
+
+
+def test_languages_and_achievements_headings_end_skills_mode():
+    text = (
+        "Sneha Kulkarni\n"
+        "Skills\n"
+        "Technical: SQL, Python\n"
+        "Achievements\n"
+        "- Top 40 of 600 teams, Smart India Hackathon\n"
+        "Languages\n"
+        "- English\n- Hindi\n"
+    )
+    parsed = parse_resume(text)
+    assert set(parsed["skills"]) >= {"sql", "python"}
+    assert all("hackathon" not in e["skill"] for e in parsed["skillEvidence"])
+    assert "english" not in parsed["skills"] and "hindi" not in parsed["skills"]

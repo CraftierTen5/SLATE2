@@ -59,8 +59,23 @@ _SKILL_HEADING = re.compile(
 _SECTION_HEADING = re.compile(
     r"^(?:education|experience|work experience|employment|projects|qualifications|"
     r"certifications|interests(?:/hobbies)?|referees|references|availability|"
-    r"career objective|summary|academic qualifications|academic details|internship|internships|work history|professional experience|professional background|leadership roles|formation|expérience|educación|"
+    r"career objective|summary|professional summary|academic qualifications|academic details|internship|internships|work history|professional experience|professional background|leadership roles|formation|expérience|educación|"
+    r"positions? of responsibility|achievements?|awards?|honou?rs(?: ?/ ?awards)?|languages?|"
+    r"(?:professional )?memberships?|hobbies|extracurricular(?: activities)?|declaration|"
     r"experiencia|ausbildung|berufserfahrung|教育|工作经历|शिक्षा|अनुभव)\s*[:：]?\s*$", re.I)
+
+
+def _skill_heading_match(line):
+    """A skills heading, or None for prose fragments like 'skills.'/'skills,'.
+
+    PDF text can wrap a sentence so its last word ('skills.') sits alone on a
+    line. Punctuation-only trailing content is a fragment, never a heading;
+    real inline content ('Skills: Python, Java') always contains a word.
+    """
+    m = _SKILL_HEADING.fullmatch(line)
+    if m and m.group(1) and not re.search(r"[\w]", m.group(1)):
+        return None
+    return m
 
 
 def explicit_skill_evidence(text):
@@ -77,7 +92,7 @@ def explicit_skill_evidence(text):
         if not line:
             active = False
             continue
-        heading = _SKILL_HEADING.fullmatch(line)
+        heading = _skill_heading_match(line)
         if heading:
             active = True
             content = heading.group(1)
@@ -139,7 +154,7 @@ def _review_text(text):
         clean = line.strip()
         if _INSTRUCTION_HEADING.fullmatch(clean):
             instruction = True
-        elif _SKILL_HEADING.fullmatch(clean) or _SECTION_HEADING.fullmatch(clean):
+        elif _skill_heading_match(clean) or _SECTION_HEADING.fullmatch(clean):
             instruction = False
         lines.append(("instruction: " if instruction else "") + clean)
     low = unicodedata.normalize("NFKC", "\n".join(lines)).casefold()
@@ -190,7 +205,7 @@ def plain_list_review_candidates(text):
     active = False
     for raw in text.splitlines():
         line = raw.strip()
-        heading = _SKILL_HEADING.fullmatch(line)
+        heading = _skill_heading_match(line)
         if heading:
             flush(); active = not bool(heading.group(1)); continue
         if not active:
@@ -224,9 +239,14 @@ def resume_skill_evidence(text):
             for match in re.finditer(pattern, low):
                 e = {"skill": skill, "matchedText": match.group(0), "source": "known_phrase"}
                 context = _context(low, match)
+                line = _line_of(low, match).strip()
                 if _is_uncertain(context):
                     flagged.setdefault(skill, dict(e, reason="Negative, aspirational or instructional context; not counted without review."))
-                elif _DEGREE.search(_line_of(low, match)):
+                elif _SECTION_HEADING.fullmatch(line):
+                    # "Positions of Responsibility" is a section heading; its words
+                    # are not evidence of a responsibility skill.
+                    flagged.setdefault(skill, dict(e, reason="Appears in a section heading; a heading word is not a skill mention; not counted without review."))
+                elif _DEGREE.search(line):
                     # A degree line names subjects of study; e.g. "B.Des Communication
                     # Design" is not evidence of a communication skill. Flag for review
                     # instead of accepting. A mention elsewhere can still be accepted.

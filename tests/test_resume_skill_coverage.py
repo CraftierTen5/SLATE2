@@ -35,9 +35,12 @@ Handled cash including operating a cash register.
 Leadership Roles
 Assistant Coach for junior players.
 """
+# 'leadership' was previously sourced from the "Leadership Roles" section
+# heading itself; audit F1 (2026-11-11) established a heading word is not a
+# skill mention, so the candidate's actual coaching line yields 'coaching'.
 EXPECTED = {"customer service", "cash handling", "numeracy", "communication",
             "teamwork", "organisation", "responsibility", "problem solving",
-            "leadership", "coaching"}
+            "coaching"}
 
 
 def test_retail_resume_is_not_collapsed_to_one_fixture_skill():
