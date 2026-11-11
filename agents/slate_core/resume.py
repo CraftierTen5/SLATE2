@@ -63,8 +63,9 @@ def _education_entry(part):
             sm = re.search(r"\bstudied\s+(.{2,60}?)\s+at\s+((?:[A-Z0-9][\w&.'-]*)(?:\s+(?:[A-Z0-9][\w&.'-]*|of|and))*?)(?=\s*[,.;]|\s+(?:graduating|in|from|during)\b|\s*$)", part, re.I)
             if sm and not re.search(r"\b(?:seeking|looking|aspir|plans? to|wants? to)\b", part, re.I):
                 years = re.findall(r"(?:19|20)\d\d", part)
+                # Subject of study as written, not an earned-credential claim.
                 return {"degree": sm.group(1).strip(" ,."), "institute": sm.group(2).strip(" ,."),
-                        "year": int(years[-1]) if years else None}
+                        "year": int(years[-1]) if years else None, "subjectOnly": True}
         return None
     if len(part) > 160:
         return None

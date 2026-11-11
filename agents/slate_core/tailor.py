@@ -26,7 +26,11 @@ def build_draft(parsed: dict, job: dict, profile: dict = None) -> dict:
     for e in parsed["experience"]:
         resume.append(f"Experience: {e['title']}, {e['org']}")
     for e in parsed["education"]:
-        resume.append(f"Education: {e['degree']}" + (f" ({e['year']})" if e["year"] else ""))
+        # Institute is parsed with source casing; render it when literally present.
+        # A prose "studied X" subject is labeled as study, never as an earned degree.
+        line = (f"Education: Studied {e['degree']}" if e.get("subjectOnly") else f"Education: {e['degree']}")
+        line += f", {e['institute']}" if e.get("institute") else ""
+        resume.append(line + (f" ({e['year']})" if e["year"] else ""))
     note = (f"Hello {job['company']} team, I am applying for the {job['title']} role. "
             + (f"My background includes {', '.join(matched)}. " if matched else "")
             + "I would be glad to share more about my projects.")

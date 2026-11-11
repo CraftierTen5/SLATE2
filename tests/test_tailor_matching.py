@@ -4,6 +4,7 @@ the tailor draft and claim check must agree with it)."""
 import os, sys, unittest
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "agents"))
 from slate_core.tailor import build_draft, check_claims
+from slate_core.resume import parse_resume
 from slate_core import SlateService
 
 RESUME_TEXT = ("Asha Verma\nB.Tech Computer Science, IIITM Gwalior, 2027\n"
@@ -79,3 +80,19 @@ class UnknownNameHandling(unittest.TestCase):
         r = s.tailor(rid, "job_001")
         self.assertTrue(r["tailoredResume"].startswith("Asha Verma\n"))
         self.assertNotIn("name", r["profileGaps"])
+
+
+class EducationRendering(unittest.TestCase):
+    """Draft education lines preserve source facts without inflating them."""
+
+    def test_structured_degree_renders_institute_and_year(self):
+        parsed = parse_resume("Asha Verma\nEducation\nB.Tech Computer Science, IIITM Gwalior, 2027\nSkills: Python, Git, SQL\n")
+        d = build_draft(parsed, {"title": "Data Analyst", "company": "ExampleCo", "skills": ["Python"]})
+        self.assertIn("Education: B.Tech, IIITM Gwalior (2027)", d["tailoredResume"])
+
+    def test_prose_study_subject_is_labeled_study_not_degree(self):
+        parsed = parse_resume("Priya Nair is a final-year student with AutoCAD skills.\n"
+                              "She studied Mechanical Engineering at NIT Trichy, graduating 2026.\n"
+                              "She interned at MechDesign Labs as a CAD Intern.")
+        d = build_draft(parsed, {"title": "Data Analyst", "company": "ExampleCo", "skills": ["Python"]})
+        self.assertIn("Education: Studied Mechanical Engineering, NIT Trichy (2026)", d["tailoredResume"])

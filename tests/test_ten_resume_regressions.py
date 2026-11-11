@@ -112,7 +112,7 @@ def test_prose_studied_at_pattern_yields_education():
     parsed = parse_resume("Priya Nair is a final-year student with AutoCAD skills.\n"
                           "She studied Mechanical Engineering at NIT Trichy, graduating 2026.\n"
                           "She interned at MechDesign Labs as a CAD Intern.")
-    assert parsed["education"] == [{"degree": "Mechanical Engineering", "institute": "NIT Trichy", "year": 2026}]
+    assert parsed["education"] == [{"degree": "Mechanical Engineering", "institute": "NIT Trichy", "year": 2026, "subjectOnly": True}]
 
 
 def test_prose_worked_at_as_pattern_yields_experience():
