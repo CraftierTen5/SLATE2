@@ -72,6 +72,7 @@ def parse_resume(text: str) -> dict:
     skills = [item["skill"] for item in evidence]
     education, experience = [], []
     qlines = list(qualification_lines(text))
+    joined_ctx = set()  # qline indices already consumed as another entry's context
     for qi, l in enumerate(qlines):
         for part in re.split(r";", l):
             edu = _education_entry(part) or _school_entry(part)
@@ -94,7 +95,31 @@ def parse_resume(text: str) -> dict:
                                 gpa_ctx = _gpa_literal(nl)
                             continue
                         ctx = _institute_context(nl)
+                        if ctx:
+                            joined_ctx.add(qi + off)
                         break
+                    if ctx is None:
+                        # Some templates put the institute BEFORE the degree
+                        # ('University of X' / 'Expected... 2016' / 'B.A., Y').
+                        for off in range(1, 4):
+                            bi = qi - off
+                            if bi < 0:
+                                break
+                            bl = qlines[bi]
+                            if not bl.strip():
+                                continue
+                            # A preceding entry or the candidate's own name line
+                            # means the scan has left this entry's context.
+                            if (bi in joined_ctx or _education_entry(bl) or _school_entry(bl)
+                                    or _experience_entry(bl)
+                                    or (name and bl.strip().casefold() == str(name).casefold())):
+                                break
+                            if _is_date_line(bl) or re.search(r"(?:19|20)\d\d", bl) or _gpa_literal(bl):
+                                continue
+                            ctx = _institute_context(bl)
+                            if ctx:
+                                joined_ctx.add(bi)
+                            break
                     if ctx:
                         edu["institute"] = ctx["institute"]
                         if "gpa" in ctx and "gpa" not in edu:
