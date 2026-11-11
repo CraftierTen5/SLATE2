@@ -3,8 +3,9 @@
 Needs Python 3.10+. From the repo root:
 
     python3 -m venv .venv && . .venv/bin/activate
-    pip install fastapi uvicorn httpx pytest sqlalchemy python-multipart pypdf
-    python -m pytest tests -q                                   # 83 tests at time of writing
+    pip install -r backend/requirements.txt
+    pip install httpx pytest
+    python -m pytest tests -q
     SLATE_DEV_AUTH=1 SLATE_STATE_URL=sqlite:///slate_state.db \
       uvicorn slate_api.app:app --app-dir agents --port 8000
 
@@ -13,7 +14,7 @@ Both pages ask you to sign in first; in `SLATE_DEV_AUTH=1` mode enter any email 
 dev identity so the multi-user behavior can be tried without any external account. It is NOT
 security: never run a deployed server this way.
 
-Every `/v1` call now needs a bearer token and only ever touches the signed-in user's own data:
+Every `/v1` data call needs a bearer token (`/v1/config` is public) and only ever touches the signed-in user's own data:
 resumes, drafts/approvals, interview sessions and roadmap are scoped per user and stored per user,
 so two people can use the same server without seeing each other's data, and each person's data
 survives a restart (with `SLATE_STATE_URL` set; unset = in-memory and lost on restart).
@@ -31,25 +32,29 @@ The served app picks exactly one, from the environment:
 
 A real provider always wins over the dev flag, so a misconfigured deploy cannot fall into dev sign-in.
 
-## Which PR provides what
+## Runtime surfaces
 
-| PR | Provides |
-| --- | --- |
-| #5 | `agents/slate_core`: logic (stdlib only) and its tests |
-| #6 | `agents/slate_api`: FastAPI `/v1` routes |
-| #7 | server-side claim validation (rule based) |
-| #12-#17 chain | snapshot persistence, PDF upload, demo reset, AI adapter + grounded AI drafts |
-| this PR | per-user auth + per-user durable state, login UI on the AI page |
-| #4 and #8 | Akarsh's Postgres docker + base server, and the DATABASE_URL leak fix. Separate app in `backend/`, not required for the demo above |
+The working API is `agents/slate_api/app.py`; the website and stdlib CLI use
+its `/v1` routes. `backend/main.py` is a separate health/setup endpoint only.
+`backend/docker-compose.yml` is optional local PostgreSQL scaffolding, not
+proof of a connected database or a production deployment.
 
 ## Persistence and security, honestly
 
-`SLATE_STATE_URL` takes any SQLAlchemy URL. Each user's state is one JSON document in a per-user row
-(`slate_user_state`), rewritten after each change. Tested on SQLite (state survives a restart,
-including approvals and interview memory). Postgres works through the same SQLAlchemy layer but the
-hosted setup has not been run yet. Same-user concurrent requests are serialized by a per-user
-process lock; that covers ONE process only - a multi-process deployment would need real row locking
-and is not claimed. Input caps: 200 KB resume text, 5 MB PDF, 8 KB tokens.
+`SLATE_STATE_URL` selects a SQLAlchemy store. Validation targets are SQLite
+and PostgreSQL; do not infer support for arbitrary dialects or collations.
+Each user's state is one JSON document in a per-user row (`slate_user_state`).
+SQLite restart durability, isolation and spawned-process conflict races have
+been tested. A live PostgreSQL setup has not been run.
+
+Same-user HTTP requests are serialized by a separate per-user request lock
+in ONE process. The authenticated request adapter also uses atomic database
+compare-and-set against the exact loaded JSON text, detecting stale writes
+across processes. A conflict returns409 and does not automatically replay a
+mutation or a model call. The store's `UserSnapshot` facade is an unconditional
+legacy helper; authenticated routes use `RequestSnapshot` instead. Memory
+state is single-process and lost on restart. Input caps:200 KB resume text,
+5 MB PDF,8 KB tokens.
 
 Google sign-in (when configured) is stateless: the ID token is verified per request (signature,
 issuer, audience, expiry via google-auth) and the user id is the token's `sub`. There is no session
@@ -61,4 +66,4 @@ The token lives in sessionStorage: any successful XSS on our pages could read it
 Sample jobs only. The claim check is rule based and catches unsupported skills, inflated
 years/months, unlisted percentages, GPA values and degrees; it does not catch paraphrase or invented
 employers or projects. AI drafts add mechanical grounding checks (citations to resume/job blocks);
-still not a fact check. Interview feedback is a word-count rule. Nothing is deployed.
+still not a fact check. Interview coaching uses Gemini when configured and available, otherwise a labeled deterministic fallback. Browser microphone/camera and live providers were not validated in this rebuild. Nothing was deployed.
