@@ -98,7 +98,7 @@ A tailor result is always a draft. Nothing leaves the system without the approva
 
 ### 5. Mock interview
 
-`POST /v1/interview/mock` accepts `{ "targetRole": "Data Analyst", "mode": "text", "resumeId": "res_123" }`; `mode` may be `text` or `voice`, and `resumeId` is optional. The authenticated service scopes the resume to the verified user and sends only bounded structured resume facts to the server-side Gemini coach. The response includes `sessionId`, `firstQuestion`, `carriedFromEarlier`, `mode`, `aiPowered`, and `coachMode`.
+`POST /v1/interview/mock` accepts `{ "targetRole": "Data Analyst", "mode": "text", "resumeId": "res_123" }`; `mode` may be `text` or `voice`, and `resumeId` is optional. The service sends only bounded structured resume facts to the server-side Gemini coach, never the original resume text. Until the auth slice lands, create_app serves a single tenant and bearer tokens are not verified; the authenticated per-user scoping of resumes and sessions then applies. The response includes `sessionId`, `firstQuestion`, `carriedFromEarlier`, `mode`, `aiPowered`, and `coachMode`.
 
 `POST /v1/interview/{sessionId}/answer` accepts `{ "text": "...", "deliveryMetrics": {...} }`; deliveryMetrics is optional and contains bounded numeric features derived locally from the microphone recording (speaking rate, pause ratio/count, filler count, volume variation, estimated pitch range). Raw audio is not uploaded. The response returns `done:false`, `nextQuestion`, `isFollowUp`, `evaluation`, and `aiPowered`. Evaluation separates content score/feedback from delivery score/feedback when voice metrics are available. Gemini can chain contextual follow-ups; there is no fixed question count or automatic completion.
 

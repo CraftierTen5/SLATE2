@@ -10,7 +10,7 @@ from contextlib import nullcontext
 from typing import Optional
 from fastapi import APIRouter, FastAPI, File, Request, UploadFile
 from fastapi.exceptions import RequestValidationError
-from fastapi.responses import JSONResponse, PlainTextResponse
+from fastapi.responses import JSONResponse, PlainTextResponse, FileResponse  # FileResponse: interview feature page
 from pydantic import BaseModel, Field, StrictBool
 
 # Load local environment files without overriding values already set by the shell.
@@ -34,6 +34,13 @@ STATUS.setdefault("invalid_target", 422)
 STATUS.setdefault("invalid_source_preservation", 422)
 STATUS.setdefault("target_not_found", 404)
 STATUS.setdefault("ai_not_configured", 503)  # appended, so sibling PRs editing the dict do not collide
+# --- Interview feature ---
+STATUS.setdefault("session_not_found", 404)
+STATUS.setdefault("mode_unsupported", 422)
+STATUS.setdefault("answer_empty", 422)
+STATUS.setdefault("interview_complete", 409)
+STATUS.setdefault("interview_ended", 409)
+# --- End interview feature ---
 
 class ResumeIn(BaseModel):
     text: str = Field(max_length=200_000)  # plain text for now; PDF upload is an open question in the contract
@@ -70,6 +77,18 @@ class EditIn(BaseModel):
 class ApprovalIn(BaseModel):
     draftId: str
     decision: str
+
+# --- Interview feature ---
+class MockIn(BaseModel):
+    targetRole: str = Field(min_length=1, max_length=120)
+    mode: str = "text"
+    resumeId: Optional[str] = None
+
+class AnswerIn(BaseModel):
+    text: str = Field(min_length=1, max_length=20_000)
+    deliveryMetrics: Optional[dict] = None
+# --- End interview feature ---
+
 
 def _mount(r: APIRouter, get_svc):
     """The one route table. get_svc(request) -> SlateService decides whose data
@@ -179,6 +198,45 @@ def _mount(r: APIRouter, get_svc):
 
 
 
+    # --- Interview feature ---
+    @r.get("/config")
+    def config():
+        """What the login UI needs. Client ids / anon keys are public by design;
+        this endpoint exposes no user data and needs no token. Token
+        verification arrives with the auth slice; until then create_app serves
+        a single tenant and ignores bearer tokens."""
+        gid = os.getenv("GOOGLE_CLIENT_ID")
+        surl, skey = os.getenv("SUPABASE_URL"), os.getenv("SUPABASE_ANON_KEY")
+        if gid:
+            return {"mode": "google", "googleClientId": gid}
+        if surl and skey:
+            return {"mode": "supabase", "supabaseUrl": surl, "supabaseAnonKey": skey}
+        if os.getenv("SLATE_DEV_AUTH") == "1":
+            return {"mode": "dev"}
+        return {"mode": "unconfigured"}
+
+    @r.post("/interview/mock")
+    def mock(request: Request, b: MockIn):
+        with get_svc(request) as svc:
+            return svc.start_interview(b.targetRole, b.mode, b.resumeId)
+
+    @r.post("/interview/{sid}/answer")
+    def answer(request: Request, sid: str, b: AnswerIn):
+        with get_svc(request) as svc:
+            return svc.answer_interview(sid, b.text, b.deliveryMetrics)
+
+    @r.post("/interview/{sid}/end")
+    def end_interview(request: Request, sid: str):
+        with get_svc(request) as svc:
+            return svc.end_interview(sid)
+
+    @r.get("/interview/{sid}/feedback")
+    def feedback(request: Request, sid: str):
+        with get_svc(request) as svc:
+            return svc.interview_feedback(sid)
+    # --- End interview feature ---
+
+
 def _shell(r: APIRouter) -> FastAPI:
     app = FastAPI(title="Slate API (core adapter)")
     from .request_limits import RequestBodyLimit
@@ -199,6 +257,15 @@ def _shell(r: APIRouter) -> FastAPI:
     @app.exception_handler(RequestValidationError)
     async def _val(_: Request, e: RequestValidationError):
         return JSONResponse({"error": {"code": "bad_request", "message": "Request body or query is invalid."}}, status_code=422)
+
+    # --- Interview feature ---
+    web_root = os.path.join(os.path.dirname(__file__), "..", "..", "web")
+    web_interview = os.path.join(web_root, "interview.html")
+
+    @app.get("/interview", include_in_schema=False)
+    def interview_page():
+        return FileResponse(web_interview) if os.path.exists(web_interview) else JSONResponse({"message": "Interview page not found"})
+    # --- End interview feature ---
 
     return app
 
