@@ -36,12 +36,10 @@ html.motion-theme,html.motion-theme body,html.motion-theme body *{transition-pro
     const done = () => live.delete(a);
     a.finished.then(done, done); // cancel() rejects finished; swallow it
     // The change event is not delivered everywhere; poll while this runs.
-    const watch = () => {
-      if (!live.has(a)) return;
-      if (window.matchMedia("(prefers-reduced-motion: reduce)").matches) { a.cancel(); return; }
-      requestAnimationFrame(watch);
-    };
-    requestAnimationFrame(watch);
+    const iv = setInterval(() => {
+      if (!live.has(a)) { clearInterval(iv); return; }
+      if (window.matchMedia("(prefers-reduced-motion: reduce)").matches) a.cancel();
+    }, 4);
     return a;
   }
 
