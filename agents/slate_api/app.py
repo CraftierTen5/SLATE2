@@ -24,12 +24,14 @@ except ImportError:
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 from slate_core import SlateService, SlateError  # noqa: E402
+from slate_core.auth import AuthError  # noqa: E402
 from slate_core.resume import ParseError, extract_pdf_text, MAX_PDF_BYTES  # noqa: E402
 
 STATUS = {"resume_not_found": 404, "job_not_found": 404, "draft_not_found": 404,
           "resume_unreadable": 422, "invalid_decision": 422,
           "role_unknown": 404,
           "draft_not_approved": 403, "draft_rejected": 409, "unsupported_claim": 422}  # feature slices append their codes
+STATUS.update(unauthenticated=401, invalid_token=401, auth_not_configured=503, state_conflict=409)
 STATUS.setdefault("invalid_target", 422)
 STATUS.setdefault("invalid_source_preservation", 422)
 STATUS.setdefault("target_not_found", 404)
@@ -208,8 +210,8 @@ def _mount(r: APIRouter, get_svc):
     def config():
         """What the login UI needs. Client ids / anon keys are public by design;
         this endpoint exposes no user data and needs no token. Token
-        verification arrives with the auth slice; until then create_app serves
-        a single tenant and ignores bearer tokens."""
+        verification is enforced in create_authenticated_app. create_app is
+        single-tenant test-fixture mode only."""
         gid = os.getenv("GOOGLE_CLIENT_ID")
         surl, skey = os.getenv("SUPABASE_URL"), os.getenv("SUPABASE_ANON_KEY")
         if gid:
@@ -269,6 +271,10 @@ def _shell(r: APIRouter) -> FastAPI:
     async def _slate(_: Request, e: SlateError):
         return JSONResponse(e.to_dict(), status_code=STATUS.get(e.code, 400))
 
+    @app.exception_handler(AuthError)
+    async def _auth(_: Request, e: AuthError):
+        return JSONResponse({"error": {"code": e.code, "message": e.message}}, status_code=STATUS.get(e.code, 401))
+
     @app.exception_handler(RequestValidationError)
     async def _val(_: Request, e: RequestValidationError):
         return JSONResponse({"error": {"code": "bad_request", "message": "Request body or query is invalid."}}, status_code=422)
@@ -276,7 +282,6 @@ def _shell(r: APIRouter) -> FastAPI:
     # --- Interview feature ---
     web_root = os.path.join(os.path.dirname(__file__), "..", "..", "web")
     web_interview = os.path.join(web_root, "interview.html")
-
     @app.get("/interview", include_in_schema=False)
     def interview_page():
         return FileResponse(web_interview) if os.path.exists(web_interview) else JSONResponse({"message": "Interview page not found"})
@@ -291,3 +296,52 @@ def create_app(service: Optional[SlateService] = None) -> FastAPI:
     r = APIRouter(prefix="/v1")
     _mount(r, lambda request: nullcontext(svc))
     return _shell(r)
+
+
+def create_authenticated_app(auth, user_store, llm_client=None) -> FastAPI:
+    """The production construction: bearer token -> verified user -> that user's
+    service, built fresh per request from the per-user store. A user id is never
+    read from the request; demo reset wipes only the caller's own data."""
+    from contextlib import contextmanager
+    from slate_core.ai_service import AISlateService
+    from slate_core.user_store import WriteConflict
+    from .user_snapshot import RequestSnapshot, request_locked
+
+    @contextmanager
+    def get_svc(request: Request):
+        if auth is None:
+            raise SlateError("auth_not_configured",
+                             "Sign-in is not configured on this server. Set GOOGLE_CLIENT_ID "
+                             "(or SUPABASE_URL + SUPABASE_ANON_KEY), or SLATE_DEV_AUTH=1 for local dev.")
+        user = auth.authenticate(request.headers.get("authorization"))
+        with request_locked(user.id):  # separate from stores' own locks; avoids nested-lock deadlock
+            try:
+                yield AISlateService(RequestSnapshot(user_store, user.id), llm_client=llm_client)
+            except WriteConflict:
+                raise SlateError("state_conflict", "Your saved data changed in another request. Nothing from this request was saved. Reopen the latest version and try again.") from None
+
+    r = APIRouter(prefix="/v1")
+
+    _mount(r, get_svc)
+    return _shell(r)
+
+def _build_auth():
+    """Exactly one provider. A real provider always wins over the dev flag, so a
+    misconfigured deployment cannot silently fall into dev sign-in."""
+    from slate_core.auth import DevAuth, GoogleAuth, SupabaseAuth
+    gid = os.getenv("GOOGLE_CLIENT_ID")
+    surl, skey = os.getenv("SUPABASE_URL"), os.getenv("SUPABASE_ANON_KEY")
+    if gid:
+        return GoogleAuth(gid)
+    if surl and skey:
+        return SupabaseAuth(surl, skey)
+    if os.getenv("SLATE_DEV_AUTH") == "1":
+        return DevAuth()
+    return None  # app still imports/serves pages; /v1 data calls answer 503
+
+def _build_store():
+    from slate_core.user_store import MemUserStore, SqlUserStore
+    url = os.getenv("SLATE_STATE_URL")  # postgres (TLS) in production; sqlite locally; unset = ephemeral
+    return SqlUserStore(url) if url else MemUserStore()
+
+app = create_authenticated_app(_build_auth(), _build_store())
