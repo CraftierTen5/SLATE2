@@ -123,6 +123,10 @@ _UNCERTAIN = re.compile(
     r"\b(?:no|not|never|without|lack|lacking|unfamiliar|want(?:s)? to learn|"
     r"wish(?:es)? to learn|plan(?:s|ning)? to learn|learning|learn|seeking|"
     r"aspir(?:e|es|ing)|interested in|hop(?:e|es|ing) to|instruction)\b", re.I)
+# Degree tokens; shared with resume.py, which imports it from here.
+_DEGREE = re.compile(
+    r"(?<![a-z])(b\.?\s?tech|m\.?\s?tech|b\.?e\.?|m\.?e\.?|bca|mca|b\.?sc\.?|m\.?sc\.?|b\.?com\.?|m\.?com\.?|"
+    r"b\.?a\.?|m\.?a\.?|b\.?ed\.?|m\.?ed\.?|b\.?des\.?|m\.?des\.?|bba|mba|pgdm|b\.?arch|ph\.?d|diploma|bachelor|master)(?![a-z])", re.I)
 _INSTRUCTION_HEADING = re.compile(
     r"^(?:required skills|desired skills|skills to learn|learning goals|"
     r"example skills|job requirements|instructions|tips)\s*[:：]?\s*(.*)$", re.I)
@@ -158,6 +162,13 @@ def _context(low, match):
     ends = [low.find(c, match.end()) for c in "\n.!?;"]
     end = min((i for i in ends if i >= 0), default=len(low))
     return low[start:end]
+
+
+def _line_of(low, match):
+    """The whole line containing a match; sentence splitting cuts 'B.Des' at its dot."""
+    start = low.rfind("\n", 0, match.start()) + 1
+    end = low.find("\n", match.end())
+    return low[start: end if end >= 0 else len(low)]
 
 
 def plain_list_review_candidates(text):
@@ -212,8 +223,14 @@ def resume_skill_evidence(text):
             pattern = r"(?<![\w+#])" + re.escape(phrase).replace(r"\ ", r"[\s-]+") + r"(?![\w+#])"
             for match in re.finditer(pattern, low):
                 e = {"skill": skill, "matchedText": match.group(0), "source": "known_phrase"}
-                if _is_uncertain(_context(low, match)):
+                context = _context(low, match)
+                if _is_uncertain(context):
                     flagged.setdefault(skill, dict(e, reason="Negative, aspirational or instructional context; not counted without review."))
+                elif _DEGREE.search(_line_of(low, match)):
+                    # A degree line names subjects of study; e.g. "B.Des Communication
+                    # Design" is not evidence of a communication skill. Flag for review
+                    # instead of accepting. A mention elsewhere can still be accepted.
+                    flagged.setdefault(skill, dict(e, reason="Appears on a degree or education line; may name a subject of study, not a skill; not counted without review."))
                 else:
                     accepted.setdefault(skill, e)
     for e in explicit_skill_evidence(text):

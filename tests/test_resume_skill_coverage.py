@@ -191,3 +191,27 @@ def test_instructional_section_stops_at_real_skill_heading():
     parsed = parse_resume("Alex Example\nRequired Skills:\nPython, SQL\nSkills: cash handling\nEducation\nExample School")
     assert parsed["skills"] == ["cash handling"]
     assert {e["skill"] for e in parsed["uncertainSkills"]} == {"python", "sql"}
+
+
+def test_degree_line_subject_is_flagged_not_counted():
+    """'B.Des Communication Design' names a subject of study, not a skill."""
+    parsed = parse_resume("Meera Iyer\nEducation\nB.Des Communication Design, NID, 2024\nSkills\nFigma, AutoCAD\n")
+    assert "communication" not in parsed["skills"]
+    assert any(e["skill"] == "communication" and "degree" in e["reason"]
+               for e in parsed["uncertainSkills"])
+
+
+def test_explicit_skills_list_still_counts_despite_degree_line():
+    parsed = parse_resume("Meera Iyer\nEducation\nB.Des Communication Design, NID, 2024\nSkills\nFigma, communication\n")
+    assert "communication" in parsed["skills"]
+
+
+def test_skill_mention_on_non_degree_line_still_counts():
+    parsed = parse_resume("Arjun Rao\nEducation\nB.Tech Computer Science, IIITM, 2027\nExperience\nIntern, ExampleCo; built a Python project\nSkills\nGit\n")
+    assert "python" in parsed["skills"]
+
+
+def test_skill_sharing_a_degree_line_goes_to_review_not_deletion():
+    parsed = parse_resume("Arjun Rao\nEducation\nB.Tech Computer Science, IIITM, 2027 - Python project\nSkills\nGit\n")
+    assert "python" not in parsed["skills"]
+    assert any(e["skill"] == "python" for e in parsed["uncertainSkills"])

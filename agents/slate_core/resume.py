@@ -1,7 +1,7 @@
 import io
 import re
 import unicodedata
-from .skills import skill_evidence, resume_skill_evidence
+from .skills import skill_evidence, resume_skill_evidence, _DEGREE
 from .resume_review import section_previews
 
 MAX_PDF_BYTES = 5_000_000
@@ -44,9 +44,6 @@ def parse_resume(text: str) -> dict:
             "parseWarnings": ["Skill candidates from phrase matches and explicit lists, not verified proficiency or a complete resume assessment. "
                               "Review the detected skills; education and work-history extraction are limited."]}
 
-_DEGREE = re.compile(
-    r"(?<![a-z])(b\.?\s?tech|m\.?\s?tech|b\.?e\.?|m\.?e\.?|bca|mca|b\.?sc\.?|m\.?sc\.?|b\.?com\.?|m\.?com\.?|"
-    r"b\.?a\.?|m\.?a\.?|b\.?ed\.?|m\.?ed\.?|b\.?des\.?|m\.?des\.?|bba|mba|pgdm|b\.?arch|ph\.?d|diploma|bachelor|master)(?![a-z])", re.I)
 _EDU_WORDS = re.compile(r"(?<![a-z])(b\.?tech|m\.?tech|bca|mca|b\.?sc|m\.?sc|bachelor|master|mba|pgdm|b\.?com|b\.?ed|b\.?e|b\.?des|m\.?des)(?![a-z])", re.I)
 _DATEISH = re.compile(r"^(?:\(?(?:19|20)\d\d(?:\s*[-\u2013to]+\s*(?:(?:19|20)\d\d|present|ongoing))?\)?|cgpa.*|.*cgpa|gpa.*|\d+(?:\.\d+)?\s*(?:/\s*10)?%?)$", re.I)
 _TITLES = (r"internship|intern|trainee|developer|analyst|engineer|executive|manager|assistant|associate|designer|consultant|"
