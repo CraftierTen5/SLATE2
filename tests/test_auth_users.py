@@ -43,6 +43,9 @@ CALLS = [
     ("post", "/v1/interview/int_001/answer", {"json": {"text": "hi"}}),
     ("get", "/v1/interview/int_001/feedback", {}),
     ("post", "/v1/approvals", {"json": {"draftId": "draft_001", "decision": "approve"}}),
+    ("get", "/v1/profile", {}),
+    ("get", "/v1/profile/suggestions?resumeId=res_001", {}),
+    ("post", "/v1/profile", {"json": {"answers": {}, "confirm": True}}),
 ]
 
 @pytest.mark.parametrize("method,path,kw", CALLS)

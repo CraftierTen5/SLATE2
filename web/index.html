@@ -261,7 +261,20 @@ html[data-theme=dark] #loginbox,html[data-theme=dark] #authPanel{background:rgba
 <textarea id="reviewskills" aria-label="Reviewed skill statements, one per line"></textarea>
 <label><input type="checkbox" id="confirmreview"> I confirm these are my skill statements, not verified qualifications.</label>
 <div><button id="savereview">Save reviewed skills as new version</button></div>
-<div id="reviewmsg" class="msg"></div></div></details></div></section>
+<div id="reviewmsg" class="msg"></div></div></details>
+<details class="skill-disclosure" id="profilewrap"><summary>Profile answers</summary><div id="profilebox">
+<h3>Confirm your profile answers once</h3>
+<p class="note">Slate reuses only the answers you confirm here, in draft headers today. Anything left blank stays unknown and is never guessed or filled from job text or the parsed resume. Suggestions from your resume are candidates until you confirm them.</p>
+<label for="prof-name">Name</label><input id="prof-name" maxlength="120" autocomplete="name">
+<label for="prof-email">Email</label><input id="prof-email" maxlength="254" autocomplete="email">
+<label for="prof-phone">Phone</label><input id="prof-phone" maxlength="40" autocomplete="tel">
+<label for="prof-location">Location</label><input id="prof-location" maxlength="120">
+<label for="prof-linkedin">LinkedIn</label><input id="prof-linkedin" maxlength="300">
+<label for="prof-github">GitHub</label><input id="prof-github" maxlength="300">
+<label for="prof-portfolio">Portfolio</label><input id="prof-portfolio" maxlength="300">
+<label><input type="checkbox" id="confirmprofile"> I confirm these are my answers. Blank fields stay unknown.</label>
+<div><button id="saveprofile">Save confirmed profile</button><button id="suggestprofile" class="sec">Suggest from this resume</button></div>
+<div id="profilemsg" class="msg"></div></div></details></div></section>
 
 <section id="targetWorkspace" data-route="targets" class="target-canvas"><h2 class="sr-only">Your target</h2>
 <p class="note">Paste a job description you chose. Slate stores what you provide, not a verified job listing. No job feed, employer check, fit score, or application sending is included.</p>
@@ -309,6 +322,7 @@ html[data-theme=dark] #loginbox,html[data-theme=dark] #authPanel{background:rgba
 <script>
 const $=id=>document.getElementById(id);
 let rid=null,did=null,sid=null,tid=null,targetParent=null,targetDirty=false,targetEpoch=0;
+const PROFIELDS=["name","email","phone","location","linkedin","github","portfolio"];
 const esc=s=>String(s).replace(/[&<>"]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
 function token(){return sessionStorage.getItem("slate_token")||""}
 class StaleResponse extends Error {}
@@ -343,7 +357,7 @@ function signedIn(email){
   resetAccountState();$("loginbox").classList.add("signed");
   $("loginctl").innerHTML="";
   $("loginmsg").innerHTML='<span class="ok">Signed in as '+esc(email||"user")+'</span> <button class="sec" id="out">Sign out</button>';
-  const signedAuth=token();restoreSelection().finally(()=>{if(token()===signedAuth){loadSavedVersions();loadSavedDrafts();loadTargets()}});
+  const signedAuth=token();restoreSelection().finally(()=>{if(token()===signedAuth){loadSavedVersions();loadSavedDrafts();loadTargets();loadProfile()}});
   $("out").onclick=()=>{clearSelection();sessionStorage.removeItem("slate_token");resetAccountState();if(window.google?.accounts?.id) google.accounts.id.disableAutoSelect();location.reload()};
 }
 async function initAuth(){
@@ -405,7 +419,8 @@ function resetAccountState(){
   $("savedversions").innerHTML='<option value="">Choose a saved version</option>';
   const selectedDraft=$("saveddrafts").value;
   $("saveddrafts").innerHTML='<option value="">Choose a saved draft</option>';
-  ["draftlistmsg","savedmsg","reviewmsg","dmsg"].forEach(id=>$(id).textContent="");updateContextBar();
+  PROFIELDS.forEach(f=>{$("prof-"+f).value=""});$("confirmprofile").checked=false;
+  ["draftlistmsg","savedmsg","reviewmsg","dmsg","profilemsg"].forEach(id=>$(id).textContent="");updateContextBar();
 }
 function resetSourceResults(){
   $("reviewmsg").textContent="";
@@ -494,6 +509,30 @@ $("savereview").onclick=async()=>{try{
   say("reviewmsg","Saved for this signed-in user. Prior source preserved. "+r.invalidatedDraftIds.length+" previous approval(s) cleared. Choose a job to make a fresh unapproved draft.");
   await loadSavedVersions();await loadJobs();
 }catch(e){if(e instanceof StaleResponse)return;say("reviewmsg",e.message,1)}};
+async function loadProfile(){try{
+  if(!token())return;
+  const p=await api("GET","/profile");
+  PROFIELDS.forEach(f=>{$("prof-"+f).value=(p.answers||{})[f]||""});
+  $("confirmprofile").checked=false;
+  say("profilemsg",p.status==="user_confirmed"?"Confirmed profile on file. Still unknown: "+(p.unknownFields.join(", ")||"none")+". Blank fields are never guessed.":"No confirmed profile yet. Confirm your answers once; Slate reuses them and never guesses blanks.");
+}catch(e){if(e instanceof StaleResponse)return;say("profilemsg",e.message,1)}}
+$("suggestprofile").onclick=async()=>{try{
+  if(!rid)throw new Error("Parse or reopen a resume version first.");
+  const request=++sourceRequest;
+  const s=await api("GET","/profile/suggestions?resumeId="+encodeURIComponent(rid));if(request!==sourceRequest)return;
+  const sug=s.suggestions||{},filled=[];
+  PROFIELDS.forEach(f=>{if(sug[f]&&!$("prof-"+f).value){$("prof-"+f).value=sug[f];filled.push(f)}});
+  $("confirmprofile").checked=false;
+  say("profilemsg",filled.length?"Suggested from this resume, not confirmed yet: "+filled.join(", ")+". Review, then confirm.":"No new candidates found in this resume. Blank fields stay unknown - nothing is guessed.");
+}catch(e){if(e instanceof StaleResponse)return;say("profilemsg",e.message,1)}};
+$("saveprofile").onclick=async()=>{try{
+  if(!$("confirmprofile").checked)throw new Error("Confirm your answers before saving.");
+  const answers={};PROFIELDS.forEach(f=>{const v=$("prof-"+f).value.trim();if(v)answers[f]=v});
+  const request=++sourceRequest;
+  const p=await api("POST","/profile",{answers,confirm:true});if(request!==sourceRequest)return;
+  $("confirmprofile").checked=false;
+  say("profilemsg","Saved confirmed profile for this signed-in user. Still unknown and never guessed: "+(p.unknownFields.join(", ")||"none")+". New drafts reuse these answers.");
+}catch(e){if(e instanceof StaleResponse)return;say("profilemsg",e.message,1)}};
 $("parse").onclick=async()=>{
  const request=++sourceRequest;$("parse").textContent="Parsing source...";$("parse").setAttribute("aria-busy","true");
  try{
@@ -516,7 +555,7 @@ async function tailor(j){const epoch=++draftGeneration;try{
   const requested=rid,generation=sourceGeneration;
   const d=await api("POST","/tailor",{resumeId:requested,jobId:j});if(epoch!==draftGeneration||generation!==sourceGeneration||requested!==rid)return; did=d.draftId;
   $("dres").value=savedRes=d.tailoredResume;$("dnote").value=savedNote=d.coverNote;setStatus("draft");refresh();
-  displayTarget(null);say("dmsg","Draft only. Skill gaps for this job: "+(d.skillGaps.join(", ")||"none")+". A person must review it before use.");on("s3");routePage("draft");
+  displayTarget(null);say("dmsg","Draft only. Skill gaps for this job: "+(d.skillGaps.join(", ")||"none")+". A person must review it before use."+(d.profileGaps&&d.profileGaps.length?" Profile answers still unknown: "+d.profileGaps.join(", ")+" - confirm them on the Resume page; nothing was guessed.":""));on("s3");routePage("draft");
 }catch(e){if(e instanceof StaleResponse||epoch!==draftGeneration)return;say("dmsg",e.message,1)}}
 $("edit").onclick=async()=>{const epoch=++draftGeneration,requested=did;try{
   const generation=sourceGeneration;

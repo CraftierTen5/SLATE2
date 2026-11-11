@@ -1,12 +1,17 @@
 """Tailoring with a claim check: every skill the draft claims must come from the parsed resume."""
 from .jobs import skill_breakdown, _norm
+from .profile import DRAFT_NEEDS, confirmed_contact_lines, profile_answers
 
-def build_draft(parsed: dict, job: dict) -> dict:
+def build_draft(parsed: dict, job: dict, profile: dict = None) -> dict:
     # Same matching as the match explanation (jobs.py): case/whitespace ignored,
     # a repeated required skill counts once, the job's own wording is kept.
     matched, missing = skill_breakdown(parsed["skills"], job["skills"])
     name = parsed["name"]
-    resume = [f"{name}", f"Target role: {job['title']} at {job['company']}", "",
+    # Reuse only confirmed profile answers (profile feature). Unknown answers
+    # are reported as profileGaps for the UI to ask about, never filled in.
+    contact = confirmed_contact_lines(profile)
+    gaps = profile_answers(profile, DRAFT_NEEDS)["missing"]
+    resume = [f"{name}"] + contact + [f"Target role: {job['title']} at {job['company']}", "",
               "Relevant skills: " + (", ".join(matched) if matched else "none listed yet")]
     for e in parsed["experience"]:
         resume.append(f"Experience: {e['title']}, {e['org']}")
@@ -15,7 +20,8 @@ def build_draft(parsed: dict, job: dict) -> dict:
     note = (f"Hello {job['company']} team, I am applying for the {job['title']} role. "
             + (f"My background includes {', '.join(matched)}. " if matched else "")
             + "I would be glad to share more about my projects.")
-    return {"tailoredResume": "\n".join(resume), "coverNote": note, "claims": matched, "gaps": missing}
+    return {"tailoredResume": "\n".join(resume), "coverNote": note, "claims": matched, "gaps": missing,
+            "profileGaps": gaps}
 
 def check_claims(parsed: dict, claims: list) -> list:
     """Return claims that are NOT backed by the resume (same normalization as matching)."""

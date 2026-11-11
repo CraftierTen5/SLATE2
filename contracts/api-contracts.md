@@ -208,3 +208,35 @@ reparse, not an automatic migration.
 - `POST /v1/tailor/target`: `{resumeId,targetId}`. Returns an unapproved `source_preserving_draft_not_rewrite` bound to the exact saved resume version, original-source SHA-256 and target snapshot. Job requirements stay target context, never applicant evidence. Original source is retained literally, including details the parser does not structure. This mode is not a formatted full CV or a generative rewrite.
 - Existing edit, approval and download routes apply. Original-source block changes are rejected in this mode; reparse edited original text to make a new resume version. Appended notes and the cover note keep ordinary claim checks. Every successful draft edit creates a new unapproved version; source skill review and target revision clear ancestor approvals. Export rechecks the saved version, hashes and target binding, then labels pasted target context separately from applicant source.
 - Known-phrase checks do not verify facts, job validity, all requirements, licenses, employers, or semantic truth. Unknown requirements remain visible in raw target text, with no fit score. No application is sent. AI tailoring remains the existing fixture-only opt-in path.
+
+## Confirmed profile answers (additive)
+
+Personal answers an application keeps needing (name, email, phone, location,
+LinkedIn, GitHub, portfolio) are confirmed ONCE per user and reused. A value
+becomes an answer only through explicit user confirmation; anything not
+answered stays unknown and no route fills it from guesses, parsed resume
+text, or job descriptions.
+
+- `GET /v1/profile`: the authenticated user's profile.
+  `{status:"user_confirmed"|"not_started", answers:{...}, unknownFields:[...], source}`.
+  `answers` holds only confirmed values; `unknownFields` lists the bounded
+  fields without an answer.
+- `GET /v1/profile/suggestions?resumeId=...`: literal candidates found in one
+  uploaded resume (`{resumeId, suggestions:{...}, suggestionsKind:"literal_candidates_from_resume_not_confirmed"}`).
+  Suggestions are review candidates for the UI to prefill; they are never
+  stored as answers without confirmation.
+- `POST /v1/profile`: `{answers:{...}, confirm:true}`. Without
+  `confirm:true` the route fails with `profile_not_confirmed` and stores
+  nothing. Unknown field names, malformed emails/links/phone numbers and
+  over-length values fail with `invalid_profile`. Empty values count as
+  unanswered and stay unknown. Saving replaces the whole profile.
+- Reuse: the deterministic `POST /v1/tailor` draft header now includes
+  confirmed contact/link lines, and its response adds `profileGaps` - the
+  draft-header fields (email, phone) with no confirmed answer, for the UI to
+  ask about. Drafts created without a profile are unchanged. The
+  source-preserving target mode keeps the original bytes and does not inject
+  profile lines; the opt-in AI path is unchanged in this slice.
+
+Confirmed answers are user statements (`user_confirmed_answers_not_independently_verified`),
+stored per user in the same state document as resumes and drafts. The demo
+reset keeps the profile: confirming once and reusing is the feature.

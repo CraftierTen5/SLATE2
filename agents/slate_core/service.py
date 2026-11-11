@@ -30,6 +30,7 @@ class SlateService:
         self._resumes = {}
         self._texts = {}
         self._targets = {}
+        self._profile = None  # profile feature: confirmed answers, loaded below
         self.approvals = ApprovalStore()
         self._store = store
         # --- Interview feature ---
@@ -53,11 +54,15 @@ class SlateService:
                 self.interviews._sessions = st.get("sessions", {})
                 self.interviews._n = st.get("sessionN", 0)
                 # --- End interview feature ---
+                # Profile feature: absent in documents stored before it existed.
+                self._profile = st.get("profile")
 
     def reset_demo(self, confirm: str) -> dict:
         """Demo helper, gated by the API layer: wipe resumes and drafts so the demo can restart.
 
-        Interview sessions belong to the interview feature and are intentionally kept."""
+        Interview sessions belong to the interview feature and are intentionally kept.
+        The confirmed profile is kept too: confirming answers once and reusing
+        them across restarts is the point of the profile feature."""
         if confirm != "reset":
             raise SlateError("reset_not_confirmed", 'Send {"confirm": "reset"} to wipe the demo data.')
         self._resumes, self._texts = {}, {}
@@ -72,7 +77,8 @@ class SlateService:
                               # --- Interview feature ---
                               "sessions": self.interviews._sessions, "sessionN": self.interviews._n,
                               # --- End interview feature ---
-                              "targets": self._targets})
+                              "targets": self._targets,
+                              "profile": self._profile})
 
     def _resume(self, rid):
         r = self._resumes.get(rid)
@@ -282,13 +288,51 @@ class SlateService:
         job = J.get_job(job_id)
         if job is None:
             raise SlateError("job_not_found", "No job with that id.")
-        d = build_draft(parsed, job)
+        d = build_draft(parsed, job, self._profile)
         bad = self._violations(resume_id, d)
         if bad:  # generated drafts must pass the same check as edited ones
             raise SlateError("unsupported_claim", "Generated draft failed claim check: " + "; ".join(bad))
         did = self.approvals.create_draft(resume_id, job_id, {"tailoredResume": d["tailoredResume"], "coverNote": d["coverNote"]})
         return {"draftId": did, "tailoredResume": d["tailoredResume"], "coverNote": d["coverNote"],
-                "status": "draft", "claimsChecked": d["claims"], "skillGaps": d["gaps"]}
+                "status": "draft", "claimsChecked": d["claims"], "skillGaps": d["gaps"],
+                "profileGaps": d["profileGaps"]}
+
+    # --- Profile feature ---
+    def get_profile(self) -> dict:
+        """This user's confirmed profile answers and the fields still unknown."""
+        from .profile import profile_view
+        return profile_view(self._profile)
+
+    def profile_suggestions(self, resume_id) -> dict:
+        """Literal candidates from one uploaded resume. Review candidates only:
+        they become answers only when the user confirms them via save_profile."""
+        from .profile import suggest_from_text
+        parsed = self._resume(resume_id)
+        return {"resumeId": resume_id,
+                "suggestions": suggest_from_text(self._texts[resume_id], parsed),
+                "suggestionsKind": "literal_candidates_from_resume_not_confirmed"}
+
+    def save_profile(self, answers, confirm: bool) -> dict:
+        """Store the user's answers only after explicit confirmation.
+
+        Unanswered fields stay unknown (get_profile lists them); nothing is
+        filled from guesses, parsed text, or job descriptions.
+        """
+        from .profile import FIELDS, normalize_answers
+        if not confirm:
+            raise SlateError("profile_not_confirmed",
+                             "Profile answers are saved only after you confirm them. Send confirm: true.")
+        try:
+            normalized = normalize_answers(answers)
+        except ValueError as e:
+            raise SlateError("invalid_profile", str(e))
+        self._profile = {"status": "user_confirmed",
+                         "source": "user_confirmed_answers_not_independently_verified",
+                         "answers": normalized,
+                         "unknownFields": [f for f in FIELDS if f not in normalized]}
+        self._persist()
+        return self.get_profile()
+    # --- End profile feature ---
 
     def _edit_draft(self, draft_id, **updates) -> dict:
         old = self.approvals.get(draft_id)

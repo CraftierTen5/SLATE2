@@ -38,6 +38,10 @@ STATUS.setdefault("target_not_found", 404)
 STATUS.setdefault("demo_reset_disabled", 403)
 STATUS.setdefault("reset_not_confirmed", 422)
 STATUS.setdefault("ai_not_configured", 503)  # appended, so sibling PRs editing the dict do not collide
+# --- Profile feature ---
+STATUS.setdefault("profile_not_confirmed", 422)
+STATUS.setdefault("invalid_profile", 422)
+# --- End profile feature ---
 # --- Interview feature ---
 STATUS.setdefault("session_not_found", 404)
 STATUS.setdefault("mode_unsupported", 422)
@@ -52,6 +56,12 @@ class ResumeIn(BaseModel):
 class SkillReviewIn(BaseModel):
     skills: list[str] = Field(max_length=64)
     confirm: StrictBool
+
+# --- Profile feature ---
+class ProfileIn(BaseModel):
+    answers: dict[str, str] = Field(default_factory=dict, max_length=16)
+    confirm: StrictBool
+# --- End profile feature ---
 
 class TargetIn(BaseModel):
     title: str = Field(min_length=1, max_length=120)
@@ -133,6 +143,20 @@ def _mount(r: APIRouter, get_svc):
     @r.post("/resume/{rid}/skills/review")
     def review_skills(request: Request, rid: str, b: SkillReviewIn):
         with get_svc(request) as svc: return svc.review_resume_skills(rid, b.skills, b.confirm)
+
+    # --- Profile feature ---
+    @r.get("/profile")
+    def get_profile(request: Request):
+        with get_svc(request) as svc: return svc.get_profile()
+
+    @r.get("/profile/suggestions")
+    def profile_suggestions(request: Request, resumeId: str):
+        with get_svc(request) as svc: return svc.profile_suggestions(resumeId)
+
+    @r.post("/profile")
+    def save_profile(request: Request, b: ProfileIn):
+        with get_svc(request) as svc: return svc.save_profile(b.answers, b.confirm)
+    # --- End profile feature ---
 
     @r.get("/jobs")
     def jobs(request: Request, query: str = "", location: str = "", resumeId: Optional[str] = None):
