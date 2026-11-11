@@ -6,6 +6,7 @@ resume intake / skill review feature. Later slices add their own sections.
 from . import jobs as J
 from .resume import parse_resume, ParseError
 from .tailor import build_draft
+from .roadmap import build_roadmap
 from .approvals import ApprovalStore
 from .claims import validate
 
@@ -144,6 +145,61 @@ class SlateService:
         skills = self._resume(resume_id)["skills"] if resume_id else []
         return {"jobs": J.search_jobs(query, location, skills)}
 
+    def create_target(self, title, organization, raw_text, source_url="", parent_target_id=None):
+        import uuid
+        from .targets import snapshot_target
+        try:
+            snapshot = snapshot_target(title, organization, raw_text, source_url)
+        except ValueError as e:
+            raise SlateError("invalid_target", str(e))
+        if parent_target_id:
+            self.get_target(parent_target_id)
+        tid = "target_" + uuid.uuid4().hex
+        snapshot.update(targetId=tid, parentTargetId=parent_target_id)
+        self._targets[tid] = snapshot
+        lineage, cursor = set(), parent_target_id
+        while cursor and cursor not in lineage:
+            lineage.add(cursor)
+            cursor = self._targets[cursor].get("parentTargetId")
+        invalidated = []
+        for did, draft in self.approvals._drafts.items():
+            if draft["content"].get("targetId") in lineage and draft["status"] == "approved":
+                draft["status"] = "draft"
+                invalidated.append(did)
+        self._persist()
+        return {"target": self.get_target(tid), "invalidatedDraftIds": invalidated}
+
+    def get_target(self, target_id):
+        import copy
+        if target_id not in self._targets:
+            raise SlateError("target_not_found", "No pasted target with that id.")
+        return copy.deepcopy(self._targets[target_id])
+
+    def list_targets(self):
+        return {"totalCount": len(self._targets), "targets": [self.get_target(tid) for tid in list(reversed(self._targets))[:100]]}
+
+    def tailor_target(self, resume_id, target_id):
+        import hashlib
+        from .targets import source_preserving_content
+        parsed = self._resume(resume_id)
+        target = self.get_target(target_id)
+        original = self.get_resume(resume_id)["sourceText"]
+        try:
+            content = source_preserving_content(original, parsed.get("skillEvidence", []), target)
+        except ValueError as e:
+            raise SlateError("invalid_source_preservation", str(e))
+        content.update(targetId=target_id, targetSnapshot=target,
+                       originalSourceSha256=hashlib.sha256(original.encode("utf-8")).hexdigest(),
+                       outputMode="source_preserving_draft_not_rewrite")
+        bad = self._violations(resume_id, content)
+        if bad:
+            raise SlateError("unsupported_claim", "Source-preserving draft failed checks: " + "; ".join(bad))
+        did = self.approvals.create_draft(resume_id, target_id, content)
+        self._persist()
+        return {"draftId": did, **content, "status": "draft", "requiresApproval": True,
+                "coverageNote": "Original source retained. Job requirements are user-pasted, not verified or fully parsed. No fit score or full CV rewrite is claimed."}
+
+
     def list_drafts(self):
         items = list(reversed(list(self.approvals._drafts.items())))
         return {"totalCount": len(items), "drafts": [
@@ -239,6 +295,13 @@ class SlateService:
             raise SlateError("draft_not_found", "No draft with that id.")
         except PermissionError:
             raise SlateError("draft_not_approved", "Only an approved draft can be used outside the app.")
+
+
+    def roadmap(self, resume_id, target_role) -> dict:
+        ms = build_roadmap(self._resume(resume_id), target_role or "")
+        if not ms:
+            raise SlateError("role_unknown", "No sample listings for that role yet.")
+        return {"milestones": ms}
 
 
     def upload_resume(self, *a, **k):

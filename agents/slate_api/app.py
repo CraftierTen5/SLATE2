@@ -28,6 +28,7 @@ from slate_core.resume import ParseError, extract_pdf_text, MAX_PDF_BYTES  # noq
 
 STATUS = {"resume_not_found": 404, "job_not_found": 404, "draft_not_found": 404,
           "resume_unreadable": 422, "invalid_decision": 422,
+          "role_unknown": 404, "invalid_decision": 422,
           "draft_not_approved": 403, "draft_rejected": 409, "unsupported_claim": 422}  # feature slices append their codes
 STATUS.setdefault("ai_not_configured", 503)  # appended, so sibling PRs editing the dict do not collide
 
@@ -38,9 +39,26 @@ class SkillReviewIn(BaseModel):
     skills: list[str] = Field(max_length=64)
     confirm: StrictBool
 
+class TargetIn(BaseModel):
+    title: str = Field(min_length=1, max_length=120)
+    organization: str = Field(default="", max_length=160)
+    rawText: str = Field(min_length=1, max_length=20_000)
+    sourceUrl: str = Field(default="", max_length=2000)
+    parentTargetId: Optional[str] = None
+
+class TargetTailorIn(BaseModel):
+    resumeId: str
+    targetId: str
+
+
 class TailorIn(BaseModel):
     resumeId: str
     jobId: str
+
+class RoadmapIn(BaseModel):
+    resumeId: str
+    targetRole: str
+
 
 class EditIn(BaseModel):
     tailoredResume: Optional[str] = None
@@ -91,6 +109,24 @@ def _mount(r: APIRouter, get_svc):
     def jobs(request: Request, query: str = "", location: str = "", resumeId: Optional[str] = None):
         with get_svc(request) as svc: return svc.jobs(query, location, resumeId)
 
+    @r.post("/targets")
+    def create_target(request: Request, b: TargetIn):
+        with get_svc(request) as svc:
+            return svc.create_target(b.title, b.organization, b.rawText, b.sourceUrl, b.parentTargetId)
+
+    @r.get("/targets")
+    def list_targets(request: Request):
+        with get_svc(request) as svc: return svc.list_targets()
+
+    @r.get("/targets/{target_id}")
+    def get_target(request: Request, target_id: str):
+        with get_svc(request) as svc: return svc.get_target(target_id)
+
+    @r.post("/tailor/target")
+    def tailor_target(request: Request, b: TargetTailorIn):
+        with get_svc(request) as svc: return svc.tailor_target(b.resumeId, b.targetId)
+
+
     @r.post("/tailor")
     def tailor(request: Request, b: TailorIn):
         with get_svc(request) as svc: return svc.tailor(b.resumeId, b.jobId)
@@ -129,6 +165,10 @@ def _mount(r: APIRouter, get_svc):
     @r.get("/drafts/{draft_id}/export")
     def export(request: Request, draft_id: str):
         with get_svc(request) as svc: return svc.export_draft(draft_id)
+
+    @r.post("/roadmap")
+    def roadmap(request: Request, b: RoadmapIn):
+        with get_svc(request) as svc: return svc.roadmap(b.resumeId, b.targetRole)
 
     @r.post("/approvals")
     def approvals(request: Request, b: ApprovalIn):
