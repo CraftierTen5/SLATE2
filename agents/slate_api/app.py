@@ -10,7 +10,7 @@ from contextlib import nullcontext
 from typing import Optional
 from fastapi import APIRouter, FastAPI, File, Request, UploadFile
 from fastapi.exceptions import RequestValidationError
-from fastapi.responses import JSONResponse
+from fastapi.responses import JSONResponse, PlainTextResponse
 from pydantic import BaseModel, Field, StrictBool
 
 # Load local environment files without overriding values already set by the shell.
@@ -26,7 +26,9 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 from slate_core import SlateService, SlateError  # noqa: E402
 from slate_core.resume import ParseError, extract_pdf_text, MAX_PDF_BYTES  # noqa: E402
 
-STATUS = {"resume_not_found": 404, "resume_unreadable": 422}  # feature slices append their codes
+STATUS = {"resume_not_found": 404, "job_not_found": 404, "draft_not_found": 404,
+          "resume_unreadable": 422, "invalid_decision": 422,
+          "draft_not_approved": 403, "draft_rejected": 409, "unsupported_claim": 422}  # feature slices append their codes
 
 class ResumeIn(BaseModel):
     text: str = Field(max_length=200_000)  # plain text for now; PDF upload is an open question in the contract
@@ -34,6 +36,18 @@ class ResumeIn(BaseModel):
 class SkillReviewIn(BaseModel):
     skills: list[str] = Field(max_length=64)
     confirm: StrictBool
+
+class TailorIn(BaseModel):
+    resumeId: str
+    jobId: str
+
+class EditIn(BaseModel):
+    tailoredResume: Optional[str] = None
+    coverNote: Optional[str] = None
+
+class ApprovalIn(BaseModel):
+    draftId: str
+    decision: str
 
 def _mount(r: APIRouter, get_svc):
     """The one route table. get_svc(request) -> SlateService decides whose data
@@ -75,6 +89,39 @@ def _mount(r: APIRouter, get_svc):
     @r.get("/jobs")
     def jobs(request: Request, query: str = "", location: str = "", resumeId: Optional[str] = None):
         with get_svc(request) as svc: return svc.jobs(query, location, resumeId)
+
+    @r.post("/tailor")
+    def tailor(request: Request, b: TailorIn):
+        with get_svc(request) as svc: return svc.tailor(b.resumeId, b.jobId)
+
+    @r.get("/drafts")
+    def list_drafts(request: Request):
+        with get_svc(request) as svc: return svc.list_drafts()
+
+    @r.get("/drafts/{draft_id}")
+    def get_draft(request: Request, draft_id: str):
+        with get_svc(request) as svc: return svc.get_draft(draft_id)
+
+    @r.get("/drafts/{draft_id}/download")
+    def download(request: Request, draft_id: str):
+        with get_svc(request) as svc:
+            text = svc.download_draft(draft_id)
+            # Generated ids are not accepted as arbitrary header text.
+            import re
+            safe = re.sub(r"[^A-Za-z0-9_-]", "_", draft_id)[:80]
+            return PlainTextResponse(text, headers={"Content-Disposition": 'attachment; filename="slate-' + safe + '.txt"'})
+
+    @r.post("/drafts/{draft_id}/edit")
+    def edit(request: Request, draft_id: str, b: EditIn):
+        with get_svc(request) as svc: return svc.edit_draft(draft_id, **b.model_dump(exclude_none=True))
+
+    @r.get("/drafts/{draft_id}/export")
+    def export(request: Request, draft_id: str):
+        with get_svc(request) as svc: return svc.export_draft(draft_id)
+
+    @r.post("/approvals")
+    def approvals(request: Request, b: ApprovalIn):
+        with get_svc(request) as svc: return svc.decide(b.draftId, b.decision)
 
 
 
