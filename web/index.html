@@ -556,7 +556,7 @@ $("pdffile").onchange=async()=>{const f=$("pdffile").files[0];if(!f)return;
 function setStatus(s){$("status").textContent=s;$("status").className="tag "+s}
 let pendingRoleAck=null;
 function hideRoleAck(){["roleack","roleackt"].forEach(id=>$(id).hidden=true);pendingRoleAck=null}
-function showRoleAck(which,msg){pendingRoleAck=which;$(which+"msg").textContent=msg;$(which).hidden=false;$(which+"box").checked=false}
+function showRoleAck(which,msg,jobId){pendingRoleAck={which:which,jobId:jobId};$(which+"msg").textContent=msg;$(which).hidden=false;$(which+"box").checked=false}
 $("roleackgo").onclick=async()=>{if(!$("roleackbox").checked){$("roleackmsg").textContent="Tick the acknowledgment box first, or pick a different listing.";return}const jobId=pendingRoleAck&&pendingRoleAck.jobId;hideRoleAck();if(jobId)await tailor(jobId,true)};
 $("roleacktgo").onclick=async()=>{if(!$("roleacktbox").checked){$("roleacktmsg").textContent="Tick the acknowledgment box first, or change the target.";return}hideRoleAck();await targetDraft(true)};
 async function tailor(j,ack){const epoch=++draftGeneration;try{
@@ -565,7 +565,7 @@ async function tailor(j,ack){const epoch=++draftGeneration;try{
   hideRoleAck();
   $("dres").value=savedRes=d.tailoredResume;$("dnote").value=savedNote=d.coverNote;setStatus("draft");refresh();
   displayTarget(null);say("dmsg","Draft only. Skill gaps for this job: "+(d.skillGaps.join(", ")||"none")+". A person must review it before use."+(d.profileGaps&&d.profileGaps.length?" Profile answers still unknown: "+d.profileGaps.join(", ")+" - confirm them on the Resume page; nothing was guessed.":"")+(d.roleGuardrail?" Role-fit note: "+d.roleGuardrail.note:""));on("s3");routePage("draft");
-}catch(e){if(e instanceof StaleResponse||epoch!==draftGeneration)return;if(e.code==="role_change_needs_acknowledgment"){showRoleAck("roleack",e.message);return}say("dmsg",e.message,1)}}
+}catch(e){if(e instanceof StaleResponse||epoch!==draftGeneration)return;if(e.code==="role_change_needs_acknowledgment"){showRoleAck("roleack",e.message,j);return}say("dmsg",e.message,1)}}
 $("edit").onclick=async()=>{const epoch=++draftGeneration,requested=did;try{
   const generation=sourceGeneration;
   const submittedRes=$("dres").value,submittedNote=$("dnote").value;
