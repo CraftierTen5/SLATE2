@@ -99,3 +99,10 @@ def test_source_casing_is_preserved_in_degrees_and_titles():
     assert [e['degree'] for e in p['education']] == ['B.Tech', 'B.Sc']
     p = parse_resume('Jo Doe\nEducation\nB.TECH CSE, 2026\n')
     assert p['education'][0]['degree'] == 'B.TECH'  # uppercase source stays uppercase
+
+
+def test_bdes_and_mdes_degrees_are_recognized():
+    p = parse_resume('Tanvi Shah\nEducation\nB.Des Communication Design, 2025\nSkills\nCSS\n')
+    assert [(e['degree'], e['year']) for e in p['education']] == [('B.Des', 2025)]
+    p = parse_resume('Aarav Gupta\nEducation\nM.Des, 2024\n')
+    assert [(e['degree'], e['year']) for e in p['education']] == [('M.Des', 2024)]
