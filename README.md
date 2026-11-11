@@ -1,0 +1,2 @@
+# SLATE
+Placement preparation copilot
