@@ -27,8 +27,10 @@ def _join_tab_split_lines(text: str) -> str:
     unchanged, so ordinary resumes are untouched. Form feeds are page breaks
     and soft hyphens are invisible; both are dropped inside artifact text.
     """
-    if "\t\n" not in text and "\xa0" not in text:
+    if "\t\n" not in text and "\xa0" not in text and "\t\r" not in text:
         return text
+    # pypdf emits the same fragments separated by '\t\r \xa0' within a line.
+    text = text.replace("\r\n", "\n").replace("\r", "\n")
     text = text.replace("\x0c", "\n").replace("\xad", "")
     out, current, blanks, prev_ended_tab = [], None, 0, False
     for raw in text.split("\n"):
@@ -85,7 +87,7 @@ def parse_resume(text: str) -> dict:
                         if qi + off >= len(qlines):
                             break
                         nl = qlines[qi + off]
-                        if not nl.strip() or _is_date_line(nl):
+                        if not nl.strip() or _is_date_line(nl) or _MONTHDATE_LINE.match(_strip_md(nl)):
                             yrs = re.findall(r"(?:19|20)\d\d", nl)
                             if yrs:
                                 end_year = int(yrs[-1])
@@ -242,7 +244,8 @@ def _education_entry(part):
     segments = [x.strip() for x in re.split(r",|\s[-\u2013]\s|\u00b7", part)[1:]]
     for seg in segments:
         seg = seg.strip(". ")
-        if not seg or len(seg) > 80 or _DATEISH.match(seg) or _DEGREE.fullmatch(seg):
+        if not seg or len(seg) > 80 or _DATEISH.match(seg) \
+                or _MONTHDATE_LINE.match(seg) or _DEGREE.fullmatch(seg):
             continue
         # Score text ("3.8 GPA", "CGPA 8.6/10 (till 7th semester)") is never an
         # institute; the labeled value already lives in entry["gpa"].
