@@ -110,3 +110,20 @@ def role_fit_review(parsed: dict, title, skills=None) -> dict:
                      + " from a small keyword vocabulary, so no distance check was "
                      "possible. This is insufficient evidence - not evidence of fit "
                      "or of mismatch.")}
+
+
+def acknowledged_review(guard: dict) -> dict:
+    """The same review after the user acknowledged a mismatch and the draft
+    exists. The refusal note (\"No draft was created yet... acknowledge\") is
+    stale the moment the draft is created, so the recorded state gets its own
+    wording: the acknowledgment happened, and it is stored on the draft.
+    Only meaningful for MISMATCH reviews; anything else is returned unchanged.
+    """
+    if guard.get("kind") != MISMATCH:
+        return guard
+    return {**guard, "acknowledgedByUser": True,
+            "note": ("You acknowledged this role change: the resume visibly shows "
+                     + guard["resumeFamily"].replace("_", " ") + " while the target is "
+                     + guard["targetFamily"].replace("_", " ") + ". That acknowledgment "
+                     "is recorded on this draft, which keeps the original facts "
+                     "unchanged and adds nothing about fit.")}

@@ -235,6 +235,8 @@ class SlateService:
                        outputMode="source_preserving_draft_not_rewrite")
         if guard["kind"] == MISMATCH:
             content["roleChangeAcknowledgedByUser"] = True
+            from .role_fit import acknowledged_review
+            guard = acknowledged_review(guard)
         bad = self._violations(resume_id, content)
         if bad:
             raise SlateError("unsupported_claim", "Source-preserving draft failed checks: " + "; ".join(bad))
@@ -312,6 +314,8 @@ class SlateService:
         content = {"tailoredResume": d["tailoredResume"], "coverNote": d["coverNote"]}
         if guard["kind"] == MISMATCH:
             content["roleChangeAcknowledgedByUser"] = True
+            from .role_fit import acknowledged_review
+            guard = acknowledged_review(guard)
         did = self.approvals.create_draft(resume_id, job_id, content)
         return {"draftId": did, "tailoredResume": d["tailoredResume"], "coverNote": d["coverNote"],
                 "status": "draft", "claimsChecked": d["claims"], "skillGaps": d["gaps"],

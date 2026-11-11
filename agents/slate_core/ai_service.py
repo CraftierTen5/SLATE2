@@ -64,6 +64,8 @@ class AISlateService(SlateService):
         content = {"tailoredResume": resume, "coverNote": note, "aiGenerated": True}
         if guard["kind"] == MISMATCH:
             content["roleChangeAcknowledgedByUser"] = True
+            from .role_fit import acknowledged_review
+            guard = acknowledged_review(guard)
         did = self.approvals.create_draft(resume_id, job_id, content)
         self._persist()
         return {"draftId": did, "tailoredResume": resume,

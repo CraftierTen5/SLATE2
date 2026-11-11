@@ -75,6 +75,15 @@ class ServiceGate(unittest.TestCase):
         d = self.s.tailor(rid, "job_mgmt", True)
         self.assertEqual(d["roleGuardrail"]["kind"], MISMATCH)
         self.assertEqual(d["roleGuardrail"]["reviewKind"], "keyword_review_not_a_fit_assessment")
+        # Regression: once the draft exists, the note must describe the recorded
+        # acknowledgment - never the stale refusal wording ("No draft was created
+        # yet", "acknowledge it explicitly") that only belongs in the 409 error.
+        note = d["roleGuardrail"]["note"]
+        self.assertTrue(d["roleGuardrail"]["acknowledgedByUser"])
+        self.assertIn("acknowledged", note)
+        self.assertIn("recorded on this draft", note)
+        self.assertNotIn("No draft was created yet", note)
+        self.assertNotIn("acknowledge it explicitly", note)
         content = self.s.get_draft(d["draftId"])["content"]
         self.assertTrue(content["roleChangeAcknowledgedByUser"])
         # Facts stay original: the draft is built from the same source, and the
@@ -104,6 +113,7 @@ class ServiceGate(unittest.TestCase):
         self.assertEqual(ctx.exception.code, "role_change_needs_acknowledgment")
         d = self.s.tailor_target(rid, t["targetId"], True)
         self.assertTrue(self.s.get_draft(d["draftId"])["content"]["roleChangeAcknowledgedByUser"])
+        self.assertIn("recorded on this draft", d["roleGuardrail"]["note"])
 
     def test_retail_resume_vs_engineering_job_also_gated(self):
         rid = self._rid(RETAIL_RESUME)
@@ -129,6 +139,7 @@ class AIGate(unittest.TestCase):
             d = s.tailor_ai(rid, "job_mgmt", acknowledge_role_change=True)
             self.assertTrue(llm.prompts)  # acknowledged: the model ran
             self.assertEqual(d["roleGuardrail"]["kind"], MISMATCH)
+            self.assertIn("recorded on this draft", d["roleGuardrail"]["note"])
         finally:
             J.JOBS = saved
 

@@ -267,6 +267,11 @@ draft entry point.
   carries `roleGuardrail` (the full review, including
   `reviewKind: "keyword_review_not_a_fit_assessment"`). Non-mismatch drafts
   carry the same `roleGuardrail` field for transparency.
+- The refusal wording ("No draft was created yet... acknowledge it
+  explicitly") appears ONLY in the 409 error, before any draft exists. On a
+  draft created after acknowledgment, `roleGuardrail` instead carries
+  `acknowledgedByUser: true` and a note describing the recorded
+  acknowledgment, so an existing draft never displays stale pending text.
 - The review is keyword evidence only: it scans parsed skills and experience
   titles on the resume side (never summary prose, so a negation like
   "no management experience" cannot classify the resume), and title,
