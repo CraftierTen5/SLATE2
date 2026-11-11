@@ -106,3 +106,24 @@ class TargetReferenceMentions(unittest.TestCase):
                        "I build machine learning models.",
                        allowed_mentions=["Machine Learning Engineer", "Northwind AI"])
         self.assertTrue(any("machine learning" in v for v in bad))
+
+    def test_first_person_assertion_with_exact_title_still_rejected_in_note(self):
+        did = self.s.tailor(self.rid, "job_004")["draftId"]
+        with self.assertRaises(SlateError) as c:
+            self.s.edit_draft(did, coverNote="Previously worked as a Machine Learning Engineer.")
+        self.assertEqual(c.exception.code, "unsupported_claim")
+        self.assertIn("machine learning", c.exception.message)
+
+    def test_first_person_assertion_with_exact_title_still_rejected_in_resume(self):
+        did = self.s.tailor(self.rid, "job_004")["draftId"]
+        with self.assertRaises(SlateError) as c:
+            self.s.edit_draft(did, tailoredResume="Kavya Menon\nExperience: Machine Learning Engineer, OldCo")
+        self.assertEqual(c.exception.code, "unsupported_claim")
+
+    def test_reference_context_and_real_claim_in_same_note(self):
+        from slate_core.claims import validate
+        parsed = self.s.get_resume(self.rid)["parsed"]
+        bad = validate(parsed, self.NO_ML_RESUME, "",
+                       "I am applying for the Machine Learning Engineer role and I know machine learning.",
+                       allowed_mentions=["Machine Learning Engineer", "Northwind AI"])
+        self.assertTrue(any("machine learning" in v for v in bad))

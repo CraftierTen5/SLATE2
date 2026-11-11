@@ -22,17 +22,23 @@ def total_months(parsed: dict) -> int:
 def validate(parsed: dict, resume_text: str, *texts: str, allowed_mentions=()) -> list:
     """Return a list of human-readable violations; empty list means no rule-detectable problem.
 
-    allowed_mentions: exact strings the generator legitimately quotes without
-    claiming them - the target's own title and company ("applying for the
-    Machine Learning Engineer role"). Only those exact occurrences are
-    excluded, so a personal assertion using the same words any other way
-    ("two years of machine learning experience") is still caught.
+    allowed_mentions: exact strings the generator legitimately quotes - the
+    target's own title and company. Only verifiable REFERENCE contexts are
+    exempt: a line starting "Target role:", the phrase "applying for the
+    <title> role", and the greeting "Hello <company> team". The same words in
+    any other context stay subject to every check, so a first-person
+    assertion containing the exact title ("Previously worked as a Machine
+    Learning Engineer") is still caught.
     """
     problems = []
     body = "\n".join(t for t in texts if t)
-    for mention in allowed_mentions:
-        if isinstance(mention, str) and mention.strip():
-            body = re.sub(r"(?<!\w)" + re.escape(mention.strip()) + r"(?!\w)", " ", body, flags=re.I)
+    mentions = [m.strip() for m in allowed_mentions if isinstance(m, str) and m.strip()]
+    if mentions:
+        body = "\n".join("" if line.lstrip().lower().startswith("target role:") else line
+                          for line in body.split("\n"))
+        for m in mentions:
+            body = re.sub(r"(?<!\w)applying for the " + re.escape(m) + r" role(?!\w)", " ", body, flags=re.I)
+            body = re.sub(r"(?<!\w)hello " + re.escape(m) + r" team(?!\w)", " ", body, flags=re.I)
     low, src = _norm(body), _norm(resume_text)
     for s in find_skills(body):
         if s not in parsed["skills"]:
