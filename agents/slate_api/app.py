@@ -283,6 +283,7 @@ def _shell(r: APIRouter) -> FastAPI:
     web_root = os.path.join(os.path.dirname(__file__), "..", "..", "web")
     web_interview = os.path.join(web_root, "interview.html")
     web_index = os.path.join(web_root, "index.html")
+    web_ai = os.path.join(web_root, "ai.html")
 
     @app.get("/resume", include_in_schema=False)
     @app.get("/targets", include_in_schema=False)
@@ -292,6 +293,11 @@ def _shell(r: APIRouter) -> FastAPI:
     @app.get("/", include_in_schema=False)
     def index_page():
         return FileResponse(web_index)
+
+    @app.get("/ai", include_in_schema=False)
+    def ai_page():
+        return FileResponse(web_ai)
+
 
     @app.get("/interview", include_in_schema=False)
     def interview_page():
