@@ -65,6 +65,13 @@ _SECTION_HEADING = re.compile(
     r"experiencia|ausbildung|berufserfahrung|教育|工作经历|शिक्षा|अनुभव)\s*[:：]?\s*$", re.I)
 
 
+def _mdless(line):
+    """Strip markdown heading/emphasis markers for heading detection only;
+    callers keep the original line for content."""
+    s2 = re.sub(r"^#{1,6}\s+", "", line.strip())
+    return re.sub(r"[*_`]+", "", s2).strip()
+
+
 def _skill_heading_match(line):
     """A skills heading, or None for prose fragments like 'skills.'/'skills,'.
 
@@ -92,6 +99,7 @@ def explicit_skill_evidence(text):
         if not line:
             active = False
             continue
+        line = _mdless(line)
         heading = _skill_heading_match(line)
         if heading:
             active = True
@@ -154,9 +162,10 @@ def _review_text(text):
     instruction, lines = False, []
     for line in text.splitlines():
         clean = line.strip()
-        if _INSTRUCTION_HEADING.fullmatch(clean):
+        mdless = _mdless(clean)
+        if _INSTRUCTION_HEADING.fullmatch(mdless):
             instruction = True
-        elif _skill_heading_match(clean) or _SECTION_HEADING.fullmatch(clean):
+        elif _skill_heading_match(mdless) or _SECTION_HEADING.fullmatch(mdless):
             instruction = False
         lines.append(("instruction: " if instruction else "") + clean)
     low = unicodedata.normalize("NFKC", "\n".join(lines)).casefold()
@@ -206,7 +215,7 @@ def plain_list_review_candidates(text):
         pending.clear()
     active = False
     for raw in text.splitlines():
-        line = raw.strip()
+        line = _mdless(raw.strip())
         heading = _skill_heading_match(line)
         if heading:
             flush(); active = not bool(heading.group(1)); continue
@@ -244,7 +253,7 @@ def resume_skill_evidence(text):
                 line = _line_of(low, match).strip()
                 if _is_uncertain(context):
                     flagged.setdefault(skill, dict(e, reason="Negative, aspirational or instructional context; not counted without review."))
-                elif _SECTION_HEADING.fullmatch(line):
+                elif _SECTION_HEADING.fullmatch(_mdless(line)):
                     # "Positions of Responsibility" is a section heading; its words
                     # are not evidence of a responsibility skill.
                     flagged.setdefault(skill, dict(e, reason="Appears in a section heading; a heading word is not a skill mention; not counted without review."))

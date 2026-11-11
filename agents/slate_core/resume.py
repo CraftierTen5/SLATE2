@@ -99,7 +99,7 @@ _SUBJECT = re.compile(
 
 def _education_entry(part):
     """Degree, institute and year from one education line; institute only if literally present."""
-    part = part.strip().lstrip("-•* ")
+    part = _strip_md(part).strip().lstrip("-•* ")
     m = _DEGREE.search(part)
     # GPA/CGPA only when literally stated on the same education line, label and
     # scale kept exactly as written; never computed, converted or invented.
@@ -130,9 +130,16 @@ def _education_entry(part):
     # Possession/completion lead-ins ("He has a B.Tech", "earned an M.Sc") count.
     if m.start() > 3:
         prefix = part[:m.start()].strip()
+        inst_first = None
         if not (re.match(r"^(?:\W*)(?:completed|pursued|graduated|earned|received)\b", prefix, re.I)
                 or re.fullmatch(r"(?:\w+\s+)?(?:has|have|holds?)\s+(?:a|an|the)", prefix, re.I)):
-            return None
+            # "State University, B.A. Communications": institute first, degree second.
+            cand = prefix.strip().rstrip(",").strip()
+            if (_ORG_SUFFIX.search(cand) and 1 <= len(cand.split()) <= 8
+                    and not _DATEISH.match(cand) and "@" not in cand):
+                inst_first = cand
+            else:
+                return None
     y = re.search(r"((?:19|20)\d\d)", part)
     year = None
     if y:
@@ -146,6 +153,15 @@ def _education_entry(part):
         if ext:
             degree += " " + ext.group(0).strip()
     inst, subject = "", None
+    if m.start() > 3:
+        pre = part[:m.start()].strip().rstrip(",").strip()
+        if _ORG_SUFFIX.search(pre) and 1 <= len(pre.split()) <= 8 and not _DATEISH.match(pre) and "@" not in pre:
+            inst = pre
+            # "B.A. Communications": the subject follows the degree token.
+            suffix = part[m.end():].strip(" ,.;·|")
+            if suffix and len(suffix.split()) <= 5 and not _DATEISH.match(suffix) \
+                    and not re.search(r"\b(?:cgpa|gpa)\b", suffix, re.I):
+                subject = suffix
     segments = [x.strip() for x in re.split(r",|\s[-\u2013]\s|\u00b7", part)[1:]]
     for seg in segments:
         seg = seg.strip(". ")
@@ -160,7 +176,8 @@ def _education_entry(part):
         if subject is None and _SUBJECT.fullmatch(seg):
             subject = seg
             continue
-        inst = seg
+        if not inst:
+            inst = seg
         break
     # Source casing is preserved as written (only the '..' artifact is normalized).
     entry = {"degree": degree, "institute": inst, "year": year}
@@ -363,7 +380,8 @@ def name_candidate(lines):
                 "qualifications", "academic qualifications", "academic details", "education and qualifications", "internship", "internships", "work history", "professional background", "academic background", "formation", "educación", "ausbildung", "शिक्षा", "教育",
                 "employment", "employment history", "professional experience", "expérience", "experiencia", "berufserfahrung", "अनुभव", "工作经历"}
     for line in lines[:8]:
-        label = line.casefold().rstrip(':：')
+        line = _strip_md(line)
+        label = line.casefold().rstrip(':：').strip()
         if label in titles:
             continue
         if "@" in line or re.match(r"^(?:e-?mail|phone|mobile|tel|contact|https?://|www\.)\b", line, re.I) or re.fullmatch(r"[+()\d\s.-]{7,}", line):
@@ -395,6 +413,11 @@ def _qualification_uncertain(line):
     # "no backlogs" is academic standing, not a denial of the qualification.
     probe = re.sub(r",?\s*no backlogs\b", "", probe, flags=re.I)
     line = re.sub(r",?\s*no backlogs\b", "", line, flags=re.I)
+    # "Example State University" is a proper org name, not sample-text marking;
+    # same exemption shape as the degree-first "Example University" case.
+    if _ORG_SUFFIX.search(probe):
+        probe = re.sub(r"\bexample\b", " ", probe, flags=re.I)
+        line = re.sub(r"\bexample\b", " ", line, flags=re.I)
     m = _DEGREE.match(probe)
     if m and re.match(r"^(?:\W*|\s+)", probe[m.end():]):
         line = re.sub(r"\bexample\b", " ", line, flags=re.I)
@@ -418,7 +441,7 @@ def qualification_lines(text):
             if excluded_section not in ENTITY_LIST_SECTIONS:
                 excluded_section = False
             continue
-        label = l.casefold().rstrip(':：')
+        label = _strip_md(l).casefold().rstrip(':：').strip()
         if label.startswith("user-provided skill statements"):
             excluded_section = "user-provided skill statements"
             continue
