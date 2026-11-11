@@ -28,8 +28,11 @@ from slate_core.resume import ParseError, extract_pdf_text, MAX_PDF_BYTES  # noq
 
 STATUS = {"resume_not_found": 404, "job_not_found": 404, "draft_not_found": 404,
           "resume_unreadable": 422, "invalid_decision": 422,
-          "role_unknown": 404, "invalid_decision": 422,
+          "role_unknown": 404,
           "draft_not_approved": 403, "draft_rejected": 409, "unsupported_claim": 422}  # feature slices append their codes
+STATUS.setdefault("invalid_target", 422)
+STATUS.setdefault("invalid_source_preservation", 422)
+STATUS.setdefault("target_not_found", 404)
 STATUS.setdefault("ai_not_configured", 503)  # appended, so sibling PRs editing the dict do not collide
 
 class ResumeIn(BaseModel):
