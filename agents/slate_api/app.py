@@ -33,6 +33,8 @@ STATUS = {"resume_not_found": 404, "job_not_found": 404, "draft_not_found": 404,
 STATUS.setdefault("invalid_target", 422)
 STATUS.setdefault("invalid_source_preservation", 422)
 STATUS.setdefault("target_not_found", 404)
+STATUS.setdefault("demo_reset_disabled", 403)
+STATUS.setdefault("reset_not_confirmed", 422)
 STATUS.setdefault("ai_not_configured", 503)  # appended, so sibling PRs editing the dict do not collide
 # --- Interview feature ---
 STATUS.setdefault("session_not_found", 404)
@@ -89,6 +91,9 @@ class AnswerIn(BaseModel):
     deliveryMetrics: Optional[dict] = None
 # --- End interview feature ---
 
+
+class ResetIn(BaseModel):
+    confirm: str = ""
 
 def _mount(r: APIRouter, get_svc):
     """The one route table. get_svc(request) -> SlateService decides whose data
@@ -235,6 +240,16 @@ def _mount(r: APIRouter, get_svc):
         with get_svc(request) as svc:
             return svc.interview_feedback(sid)
     # --- End interview feature ---
+
+
+    @r.post("/demo/reset")
+    def demo_reset(request: Request, b: ResetIn):
+        # Off unless the local demo server opts in: SLATE_DEMO_RESET=1 uvicorn ...
+        # In the authenticated app this wipes ONLY the caller's own data.
+        if os.getenv("SLATE_DEMO_RESET") != "1":
+            raise SlateError("demo_reset_disabled",
+                             "Demo reset is off. Start the local demo with SLATE_DEMO_RESET=1 to enable it.")
+        with get_svc(request) as svc: return svc.reset_demo(b.confirm)
 
 
 def _shell(r: APIRouter) -> FastAPI:
