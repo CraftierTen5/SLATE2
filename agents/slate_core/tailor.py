@@ -9,9 +9,19 @@ def build_draft(parsed: dict, job: dict, profile: dict = None) -> dict:
     name = parsed["name"]
     # Reuse only confirmed profile answers (profile feature). Unknown answers
     # are reported as profileGaps for the UI to ask about, never filled in.
+    gaps = list(profile_answers(profile, DRAFT_NEEDS)["missing"])
+    # An unparseable name is never guessed and never printed as a placeholder:
+    # use a confirmed profile answer when one exists, else omit the line and
+    # ask for it through the same confirmation flow.
+    if name == "Unknown":
+        confirmed_name = profile_answers(profile, ("name",))["answers"].get("name")
+        if confirmed_name:
+            name = confirmed_name
+        else:
+            name = None
+            gaps = ["name"] + gaps
     contact = confirmed_contact_lines(profile)
-    gaps = profile_answers(profile, DRAFT_NEEDS)["missing"]
-    resume = [f"{name}"] + contact + [f"Target role: {job['title']} at {job['company']}", "",
+    resume = ([f"{name}"] if name else []) + contact + [f"Target role: {job['title']} at {job['company']}", "",
               "Relevant skills: " + (", ".join(matched) if matched else "none listed yet")]
     for e in parsed["experience"]:
         resume.append(f"Experience: {e['title']}, {e['org']}")

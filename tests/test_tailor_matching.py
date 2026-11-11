@@ -4,6 +4,7 @@ the tailor draft and claim check must agree with it)."""
 import os, sys, unittest
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "agents"))
 from slate_core.tailor import build_draft, check_claims
+from slate_core import SlateService
 
 RESUME_TEXT = ("Asha Verma\nB.Tech Computer Science, IIITM Gwalior, 2027\n"
                "Intern at ExampleCo (3 months)\nSkills: Python, Git, Excel, communication")
@@ -49,3 +50,32 @@ class EndToEndConsistency(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class UnknownNameHandling(unittest.TestCase):
+    """An unparseable name is never printed as 'Unknown'; it goes to confirmation."""
+
+    NO_NAME_RESUME = "Contact: x@example.com\nSkills\nPython, SQL, Git\nExperience\nData Intern, ClearInsights\nEducation\nB.Sc Maths, 2025\n"
+
+    def test_unknown_name_omitted_and_surfaced_as_profile_gap(self):
+        s = SlateService()
+        rid = s.upload_resume(self.NO_NAME_RESUME)["resumeId"]
+        r = s.tailor(rid, "job_001")
+        self.assertNotIn("Unknown", r["tailoredResume"])
+        self.assertIn("Target role: Data Analyst at ExampleCo", r["tailoredResume"])
+        self.assertIn("name", r["profileGaps"])
+
+    def test_confirmed_name_flows_into_the_draft(self):
+        s = SlateService()
+        rid = s.upload_resume(self.NO_NAME_RESUME)["resumeId"]
+        s.save_profile({"name": "Ritika Sen"}, True)
+        r = s.tailor(rid, "job_001")
+        self.assertTrue(r["tailoredResume"].startswith("Ritika Sen\n"), r["tailoredResume"])
+        self.assertNotIn("name", r["profileGaps"])
+
+    def test_parseable_name_untouched_and_no_name_gap(self):
+        s = SlateService()
+        rid = s.upload_resume("Asha Verma\nSkills: Python, Git, SQL\n")["resumeId"]
+        r = s.tailor(rid, "job_001")
+        self.assertTrue(r["tailoredResume"].startswith("Asha Verma\n"))
+        self.assertNotIn("name", r["profileGaps"])
