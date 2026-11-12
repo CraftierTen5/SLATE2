@@ -16,7 +16,7 @@ DEMO_SOURCE = "mock"
 
 
 def _norm(skill):
-    return re.sub(r"\\s+", " ", str(skill or "").strip().casefold())
+    return re.sub(r"\s+", " ", str(skill or "").strip().casefold())
 
 
 _ALIAS_TO_CANONICAL = {
