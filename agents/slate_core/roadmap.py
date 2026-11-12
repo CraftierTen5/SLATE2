@@ -6,7 +6,10 @@ from .sample_data import JOBS, LEARNING
 
 
 def _milestone(skill, count, total, source_label):
-    title, resources, weeks = LEARNING.get(skill, (f"Learn {skill}", [], 2))
+    title, resources, weeks = LEARNING.get(
+        skill,
+        (f"Learn {skill}", [f"Practice: build a small, reviewable artifact that demonstrates {skill}"], 2),
+    )
     return {
         "title": title,
         "skill": skill,
