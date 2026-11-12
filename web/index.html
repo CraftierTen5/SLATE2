@@ -704,7 +704,7 @@ $("road").onclick=async()=>{try{
   const r=await api("POST","/roadmap",{resumeId:rid,targetRole,targetId:targetId||null});
   if(generation!==sourceGeneration)return;
   $("roadmeta").textContent=r.targetTitle+" · "+(r.targetSource==="user_pasted_not_verified"?"your pasted target (not employer-verified)":"sample listings")+". "+r.scopeNote;
-  $("roadlist").innerHTML=r.milestones.map(m=>`<article class="job"><div><b>${esc(m.phase)} · ${esc(m.title)}</b><p>${esc(m.why)}</p><p><b>Practice:</b> ${esc(m.practiceTask)}</p><ul>${m.completionCriteria.map(c=>"<li>"+esc(c)+"</li>").join("")}</ul><small>${m.etaWeeks} weeks · ~${m.estimatedHours} hours · Not started</small><p>${m.resources.map(resLink).join(" · ")}</p></div></article>`).join("");
+  $("roadlist").innerHTML=r.milestones.map(m=>`<article class="job"><div><b>${esc(m.phase)} · ${esc(m.title)}</b><p>${esc(m.why)}</p><p><b>Practice:</b> ${esc(m.practiceTask)}</p><ul>${m.completionCriteria.map(c=>"<li>"+esc(c)+"</li>").join("")}</ul><small>${m.etaWeeks} weeks · ~${m.estimatedHours} hours</small><p>${m.resources.map(resLink).join(" · ")}</p></div></article>`).join("");
 }catch(e){if(e instanceof StaleResponse)return;$("roadmeta").textContent="";$("roadlist").innerHTML='<p class="bad">'+esc(e.message)+"</p>"}};
 $("roadtarget").onfocus=()=>loadRoadTargets().catch(e=>{$("roadmeta").textContent=e.message});
 let restoring=false,selectionKey=null,sourceDirty=false;
