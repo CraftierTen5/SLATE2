@@ -690,7 +690,7 @@ $("export").onclick=async()=>{const epoch=draftGeneration,requested=did,generati
   say("dmsg","Downloaded the exact approved saved draft with source/provenance labels. Not a full original CV or fact check.");
 }catch(e){if(auth!==token()||epoch!==draftGeneration||requested!==did||generation!==sourceGeneration||request!==sourceRequest)return;say("dmsg",e.message,1)}};
 
-const resLink=x=>{const i=x.lastIndexOf(" - http");if(i<0)return esc(x);const u=x.slice(i+3);return /^https?:\\/\\//.test(u)?`<a href="${esc(u)}" target="_blank" rel="noopener noreferrer">${esc(x.slice(0,i))}</a>`:esc(x)};
+const resLink=x=>{const i=x.lastIndexOf(" - http");if(i<0)return esc(x);const u=x.slice(i+3);return u.startsWith("https://")||u.startsWith("http://")?`<a href="${esc(u)}" target="_blank" rel="noopener noreferrer">${esc(x.slice(0,i))}</a>`:esc(x)};
 async function loadRoadTargets(){
   const s=$("roadtarget"),keep=s.value;s.innerHTML='<option value="">Enter a role instead</option>';
   const r=await api("GET","/targets");
