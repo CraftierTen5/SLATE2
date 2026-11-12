@@ -315,9 +315,11 @@ html[data-theme=dark] #loginbox,html[data-theme=dark] #authPanel{background:rgba
 <div class="toolrow artifact-actions"><button id="edit" class="sec">Save edit (needs new approval)</button><button id="approve">Approve saved draft</button><button id="reject" class="sec">Reject</button><button id="export" class="sec">Export approved draft</button></div>
 <div id="dmsg" class="msg"></div></section>
 
-<section id="s4" class="off" data-route="roadmap"><h2>Roadmap</h2>
-<p class="note">Data Analyst is a fixed demo roadmap, not a role inferred from your resume.</p>
-<button id="road">Build roadmap for Data Analyst</button><ul id="roadlist"></ul></section>
+<section id="s4" class="off" data-route="roadmap"><h2>Career roadmap</h2>
+<p class="note">Build a practical learning plan from your saved target or a role you enter. Recognized skill mentions only; unknown requirements remain unassessed. This is not a fit score or hiring prediction.</p>
+<label for="roadtarget">Use a saved target (optional)</label><select id="roadtarget"><option value="">Enter a role instead</option></select>
+<label for="roadrole">Target role</label><input id="roadrole" maxlength="120" placeholder="e.g. Backend Developer Intern">
+<button id="road">Build my roadmap</button><div id="roadmeta" class="msg"></div><div id="roadlist"></div></section>
 
 <section id="s5" class="off" data-route="interview"><h2>Mock interview</h2>
 <p class="note">Choose your role and saved resume in the interview workspace. It includes explicit finish and feedback controls.</p><button id="start">Open interview practice</button><div id="iv"></div></section>
@@ -688,9 +690,23 @@ $("export").onclick=async()=>{const epoch=draftGeneration,requested=did,generati
   say("dmsg","Downloaded the exact approved saved draft with source/provenance labels. Not a full original CV or fact check.");
 }catch(e){if(auth!==token()||epoch!==draftGeneration||requested!==did||generation!==sourceGeneration||request!==sourceRequest)return;say("dmsg",e.message,1)}};
 
-const resLink=x=>{const i=x.lastIndexOf(" - http");if(i<0)return esc(x);const u=x.slice(i+3);return /^https:\/\//.test(u)?`<a href="${esc(u)}" target="_blank" rel="noopener noreferrer">${esc(x.slice(0,i))}</a>`:esc(x)};
-$("road").onclick=async()=>{try{const generation=sourceGeneration;const r=await api("POST","/roadmap",{resumeId:rid,targetRole:"Data Analyst"});
-  if(generation!==sourceGeneration)return;$("roadlist").innerHTML=r.milestones.map(m=>`<li><b>${esc(m.title)}</b> · ${m.etaWeeks} wk<br><small>${esc(m.why)}</small><br><small>${m.resources.map(resLink).join(" · ")}</small></li>`).join("")}catch(e){if(e instanceof StaleResponse)return;$("roadlist").innerHTML='<li class="bad">'+esc(e.message)+"</li>"}};
+const resLink=x=>{const i=x.lastIndexOf(" - http");if(i<0)return esc(x);const u=x.slice(i+3);return /^https?:\\/\\//.test(u)?`<a href="${esc(u)}" target="_blank" rel="noopener noreferrer">${esc(x.slice(0,i))}</a>`:esc(x)};
+async function loadRoadTargets(){
+  const s=$("roadtarget"),keep=s.value;s.innerHTML='<option value="">Enter a role instead</option>';
+  const r=await api("GET","/targets");
+  (r.targets||[]).forEach(t=>{const o=document.createElement("option");o.value=t.targetId;o.textContent=t.title+(t.company?" · "+t.company:"");s.appendChild(o)});
+  if(keep)s.value=keep;else if(tid)s.value=tid;
+}
+$("road").onclick=async()=>{try{
+  if(!rid)throw new Error("Choose or upload a resume first.");
+  const generation=sourceGeneration,targetId=$("roadtarget").value,targetRole=$("roadrole").value.trim();
+  if(!targetId&&!targetRole)throw new Error("Choose a saved target or enter a target role.");
+  const r=await api("POST","/roadmap",{resumeId:rid,targetRole,targetId:targetId||null});
+  if(generation!==sourceGeneration)return;
+  $("roadmeta").textContent=r.targetTitle+" · "+(r.targetSource==="user_pasted_not_verified"?"your pasted target (not employer-verified)":"sample listings")+". "+r.scopeNote;
+  $("roadlist").innerHTML=r.milestones.map(m=>`<article class="job"><div><b>${esc(m.phase)} · ${esc(m.title)}</b><p>${esc(m.why)}</p><p><b>Practice:</b> ${esc(m.practiceTask)}</p><ul>${m.completionCriteria.map(c=>"<li>"+esc(c)+"</li>").join("")}</ul><small>${m.etaWeeks} weeks · ~${m.estimatedHours} hours · Not started</small><p>${m.resources.map(resLink).join(" · ")}</p></div></article>`).join("");
+}catch(e){if(e instanceof StaleResponse)return;$("roadmeta").textContent="";$("roadlist").innerHTML='<p class="bad">'+esc(e.message)+"</p>"}};
+$("roadtarget").onfocus=()=>loadRoadTargets().catch(e=>{$("roadmeta").textContent=e.message});
 let restoring=false,selectionKey=null,sourceDirty=false;
 const pageParts={resume:["s1"],targets:["targetWorkspace"],draft:["s3"],comparisons:["s2"],roadmap:["s4"]};
 let activePart=location.pathname.slice(1)||"resume",routeAnimations=[];
