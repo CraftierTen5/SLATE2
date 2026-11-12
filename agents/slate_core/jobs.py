@@ -16,7 +16,7 @@ DEMO_SOURCE = "mock"
 
 
 def _norm(skill):
-    return re.sub(r"\\s+", " ", str(skill or "").strip().casefold())
+    return re.sub(r"\s+", " ", str(skill or "").strip().casefold())
 
 
 _ALIAS_TO_CANONICAL = {
@@ -57,6 +57,8 @@ def match_score(resume_skills, job_skills) -> float:
 
 def _weighted_skill_score(resume_skills, job_skills, corpus):
     """IDF-weighted coverage: rarer, more discriminative skills count more."""
+    if isinstance(resume_skills, str):
+        resume_skills = [resume_skills]
     have = {canonical_skill(s) for s in (resume_skills or []) if canonical_skill(s)}
     required = []
     for skill in job_skills or []:
