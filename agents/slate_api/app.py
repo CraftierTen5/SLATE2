@@ -92,7 +92,8 @@ class TailorIn(BaseModel):
 
 class RoadmapIn(BaseModel):
     resumeId: str
-    targetRole: str
+    targetRole: str = ""
+    targetId: Optional[str] = None
 
 
 class EditIn(BaseModel):
@@ -256,7 +257,7 @@ def _mount(r: APIRouter, get_svc):
 
     @r.post("/roadmap")
     def roadmap(request: Request, b: RoadmapIn):
-        with get_svc(request) as svc: return svc.roadmap(b.resumeId, b.targetRole)
+        with get_svc(request) as svc: return svc.roadmap(b.resumeId, b.targetRole, b.targetId)
 
     @r.post("/approvals")
     def approvals(request: Request, b: ApprovalIn):
