@@ -27,7 +27,6 @@ def _milestone(skill, count, total, source_label):
             "Save a working artifact, notes, or a reproducible result.",
             "Explain one design choice and one limitation without relying on a tutorial."
         ],
-        "status": "not_started",
         "evidenceSource": source_label,
     }
 
