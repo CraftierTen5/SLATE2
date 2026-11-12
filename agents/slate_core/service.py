@@ -435,11 +435,17 @@ class SlateService:
             raise SlateError("draft_not_approved", "Only an approved draft can be used outside the app.")
 
 
-    def roadmap(self, resume_id, target_role) -> dict:
-        ms = build_roadmap(self._resume(resume_id), target_role or "")
+    def roadmap(self, resume_id, target_role="", target_id=None) -> dict:
+        target = self.get_target(target_id) if target_id else None
+        role = target.get("title", "") if target else (target_role or "")
+        ms = build_roadmap(self._resume(resume_id), role, target=target)
         if not ms:
-            raise SlateError("role_unknown", "No sample listings for that role yet.")
-        return {"milestones": ms}
+            if target and not target.get("skills"):
+                raise SlateError("role_unknown", "This target has no recognized skill mentions yet. Its unrecognized requirements remain unassessed; review the pasted description manually.")
+            raise SlateError("role_unknown", "No recognized skill gaps were found for this target. This does not establish full readiness.")
+        return {"milestones": ms, "targetTitle": role,
+                "targetSource": "user_pasted_not_verified" if target else "sample_fixtures",
+                "scopeNote": "Known skill mentions only. Unknown requirements are not assessed; this plan is not a fit score or a hiring prediction."}
 
 
     def upload_resume(self, *a, **k):
