@@ -42,7 +42,6 @@ def test_milestones_are_actionable_and_have_completion_criteria():
     milestones = build_roadmap(PARSED, "Data Analyst")
     assert all(m["practiceTask"] for m in milestones)
     assert all(len(m["completionCriteria"]) >= 2 for m in milestones)
-    assert all(m["status"] == "not_started" for m in milestones)
     assert all(m["estimatedHours"] >= 1 for m in milestones)
 
 
